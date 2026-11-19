@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "name": "FinSaathi · फ़िनसाथी",
+    "slug": "finsaathi",
+    "scheme": "finsaathi",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": { "supportsTablet": true },
+    "android": { "adaptiveIcon": { "backgroundColor": "#1747C7", "foregroundImage": "./assets/android-icon-foreground.png" } },
+    "web": { "favicon": "./assets/favicon.png", "bundler": "metro", "output": "single", "name": "FinSaathi · फ़िनसाथी" },
+    "plugins": ["expo-router", "expo-font", "expo-secure-store", "expo-notifications"]
+  }
+}
