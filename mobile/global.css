@@ -1,0 +1,21 @@
+/* react-native-web ships un-layered styles (e.g. text colour), so utilities must be !important to win. */
+@import "tailwindcss" important;
+@import "nativewind/theme";
+
+/* Semantic tokens: each Design Lab direction (and later the chosen theme) sets the CSS variables. */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface2: var(--surface2);
+  --color-ink: var(--ink);
+  --color-soft: var(--soft);
+  --color-line: var(--line);
+  --color-brand: var(--brand);
+  --color-onbrand: var(--onbrand);
+  --color-brand2: var(--brand2);
+  --color-gain: var(--gain);
+  --color-gainbg: var(--gainbg);
+  --color-loss: var(--loss);
+  --color-lossbg: var(--lossbg);
+  --color-warn: var(--warn);
+}
