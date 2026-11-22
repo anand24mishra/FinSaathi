@@ -29,16 +29,3 @@ describe('plain', () => {
   });
 });
 
-import { isTip, tipChecklist } from './tipCheck';
-import { norm } from './assistant';
-describe('tip check', () => {
-  it('spots "someone told me to buy"', () => {
-    for (const m of ['My boss told me to buy Reliance', 'boss ne bola TCS le lo', 'मेरे बॉस ने कहा है कि यह शेयर खरीदो', 'friend ne tip diya hai kharidna chahiye', 'broker suggests I invest in Infosys']) expect(isTip(norm(m))).toBe(true);
-  });
-  it('ignores ordinary questions', () => {
-    for (const m of ['What is the price of Reliance', 'Should I buy TCS', 'आज बाज़ार कैसा है', 'explain SIP']) expect(isTip(norm(m))).toBe(false);
-  });
-  it('has the same 5 checks in every language', () => {
-    for (const s of ['en', 'hi', 'hinglish'] as const) expect(tipChecklist(s, 'TCS').split('\n').filter((l) => /^[1-5]\. /.test(l)).length).toBe(5);
-  });
-});

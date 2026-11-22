@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Landmark, ShieldCheck } from 'lucide-react-native';
+import { Landmark } from 'lucide-react-native';
 import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { Button } from '@/components/Button';
@@ -99,15 +99,6 @@ export function HomeScreen() {
       </Reveal>
       <View style={{ marginTop: space.lg, gap: space.lg }}>
         <Async q={overview} skeleton={<SkeletonBlock lines={2} />}>{(o) => <Pulse o={o} />}</Async>
-        <Pressable onPress={() => router.navigate({ pathname: '/ask', params: { q: t('ask.tip') } })} accessibilityRole="button" accessibilityLabel={t('home.tipCard')} accessibilityHint={t('home.tipBody')}>
-          <Panel style={{ borderRadius: radius.lg, padding: space.lg, flexDirection: 'row', alignItems: 'center', gap: space.md, backgroundColor: colors.cautionBg, borderColor: colors.cautionBg }}>
-            <ShieldCheck size={30} color={colors.caution} />
-            <View style={{ flex: 1, gap: 2 }}>
-              <Text v="bodyLg" weight="bold">{t('home.tipCard')}</Text>
-              <Text v="small" tone="soft">{t('home.tipBody')}</Text>
-            </View>
-          </Panel>
-        </Pressable>
         <Note o={overview} />
         <Calls />
         <Pressable onPress={() => router.navigate('/plan')} accessibilityRole="button" accessibilityLabel={t('home.planCard')} style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 56, paddingHorizontal: space.sm }}>

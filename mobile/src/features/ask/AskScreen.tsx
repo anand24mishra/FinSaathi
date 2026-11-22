@@ -4,7 +4,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, { Easing, FadeInDown, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
 import * as Speech from 'expo-speech';
-import { ArrowUp, ChevronDown, ChevronUp, History, Mic, ShieldCheck, Square, SquarePen, Trash2, Volume2 } from 'lucide-react-native';
+import { ArrowUp, ChevronDown, ChevronUp, History, Mic, Square, SquarePen, Trash2, Volume2 } from 'lucide-react-native';
 import { Text } from '@/components/Text';
 import { Chip } from '@/components/Chip';
 import { Banner } from '@/components/Banner';
@@ -26,8 +26,7 @@ import { ChatHistorySheet } from './ChatHistorySheet';
 
 type Msg = { id: string; role: 'user' | 'assistant'; text: string; citations?: Citation[]; followUps?: string[]; refused?: boolean; generatedBy?: 'rules' | 'llm'; error?: boolean; style?: ReplyStyle; viaVoice?: boolean };
 const fromServer = (m: ChatMessage): Msg => ({ id: m.id, role: m.role, text: m.text, citations: m.citations, followUps: m.followUps, refused: m.refused, style: m.style, viaVoice: m.viaVoice });
-// The first prompt is the one that matters most for this audience: checking a tip someone gave them.
-const STARTERS: Key[] = ['ask.tip', 'ask.s2', 'ask.s1', 'ask.s3'];
+const STARTERS: Key[] = ['ask.s2', 'ask.s1', 'ask.s3', 'ask.s4'];
 const KEY = 'finsaathi.chat';              // old on-phone history, uploaded once then removed
 const CUR = 'finsaathi.chat.current';      // id of the conversation to resume
 
@@ -66,7 +65,7 @@ function MeterBar({ i, h, color }: { i: number; h: number; color: string }) {
   return <Animated.View style={[{ width: 4, height: 28, borderRadius: 2, backgroundColor: color }, st]} />;
 }
 
-function Bubble({ m, onFollow }: { m: Msg; onFollow: (q: string) => void }) {
+function Bubble({ m, onFollow, showFollow }: { m: Msg; onFollow: (q: string) => void; showFollow: boolean }) {
   const { colors } = useTheme();
   const { lang } = useApp();
   const t = useT();
@@ -105,7 +104,7 @@ function Bubble({ m, onFollow }: { m: Msg; onFollow: (q: string) => void }) {
           ) : null}
         </View>
       )}
-      {m.followUps?.length ? <Cluster>{m.followUps.slice(0, 2).map((f) => <Chip key={f} label={f} onPress={() => onFollow(f)} />)}</Cluster> : null}
+      {showFollow && m.followUps?.length ? <Cluster>{m.followUps.slice(0, 2).map((f) => <Chip key={f} label={f} onPress={() => onFollow(f)} />)}</Cluster> : null}
     </Animated.View>
   );
 }
@@ -129,11 +128,10 @@ function EmptyState({ onPick, onMic }: { onPick: (q: string) => void; onMic: () 
         <Text v="body" tone="soft" center>{t('ask.helloSub')}</Text>
       </View>
       <View style={{ alignSelf: 'stretch', gap: space.sm }}>
-        {STARTERS.map((k, i) => (
+        {STARTERS.map((k) => (
           <Pressable key={k} onPress={() => onPick(t(k))} accessibilityRole="button" accessibilityLabel={t(k)}
-            style={{ minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.lg, borderRadius: radius.md, borderWidth: 1.5, borderColor: i === 0 ? colors.caution : colors.line, backgroundColor: i === 0 ? colors.cautionBg : colors.surface }}>
-            {i === 0 ? <ShieldCheck size={22} color={colors.caution} /> : null}
-            <Text v="body" weight={i === 0 ? 'semibold' : 'medium'} style={{ flex: 1 }}>{t(k)}</Text>
+            style={{ minHeight: 56, flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.lg, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.line, backgroundColor: colors.surface }}>
+            <Text v="body" weight="medium" style={{ flex: 1 }}>{t(k)}</Text>
           </Pressable>
         ))}
       </View>
@@ -155,7 +153,7 @@ export function AskScreen() {
   msgsRef.current = msgs;
   const voice = useVoice();
   const { q: prefill } = useLocalSearchParams<{ q?: string }>();
-  // "Ask FinSaathi about this" on a news story, or the tip card on Home, opens the chat with the question typed in, ready to send.
+  // "Ask FinSaathi about this" on a news story opens the chat with the question typed in, ready to send.
   useEffect(() => { if (prefill) setInput(`${prefill}`); }, [prefill]);
 
   const remember = (id: string | null) => { setConvId(id); if (id) setJSON(CUR, id); else removeKey(CUR); };
@@ -261,7 +259,7 @@ export function AskScreen() {
           <ScrollView ref={scroller as never} style={{ flex: 1 }} contentContainerStyle={{ paddingVertical: space.md, gap: space.lg, flexGrow: 1 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"
             onContentSizeChange={() => scroller.current?.scrollToEnd({ animated: true })}>
             {!msgs.length && !busy ? <EmptyState onPick={send} onMic={startMic} /> : null}
-            {msgs.map((m) => <Bubble key={m.id} m={m} onFollow={send} />)}
+            {msgs.map((m, idx) => <Bubble key={m.id} m={m} onFollow={send} showFollow={idx === msgs.length - 1 && !busy} />)}
             {busy ? <Typing /> : null}
           </ScrollView>
           {notice || micMsg ? <View style={{ paddingBottom: space.sm }}><Banner tone="caution" title={(notice ?? micMsg) as string} /></View> : null}

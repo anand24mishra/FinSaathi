@@ -7,7 +7,7 @@ import Svg, { Defs, LinearGradient as SvgGradient, Path, Stop, Circle } from 're
 import Animated, {
   Easing, FadeIn, FadeInDown, FadeInUp, FadeOutUp, useAnimatedProps, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withRepeat, withSequence, withTiming,
 } from 'react-native-reanimated';
-import { Mic, ShieldCheck, TrendingUp } from 'lucide-react-native';
+import { Mic, TrendingUp } from 'lucide-react-native';
 import { Text } from '@/components/Text';
 import { Button } from '@/components/Button';
 import { Chip } from '@/components/Chip';
@@ -25,8 +25,8 @@ const AnimatedPath = Animated.createAnimatedComponent(Path);
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 const COPY = {
-  en: { head: 'Invest with confidence', phrases: ['Ask by voice', 'Check every tip first', "Understand today's market", 'Know every IPO'], voice: 'Speak in Hindi, Hinglish or English', tip: 'Tip check' },
-  hi: { head: 'भरोसे से निवेश करें', phrases: ['बोलकर पूछिए', 'हर सलाह पहले परखिए', 'आज का बाज़ार समझिए', 'हर IPO की जानकारी'], voice: 'हिन्दी, हिंग्लिश या अंग्रेज़ी में बोलिए', tip: 'सलाह की जाँच' },
+  en: { head: 'Invest with confidence', phrases: ['Ask by voice', "Understand today's market", 'Know every IPO', 'Read the news simply'], voice: 'Speak in Hindi, Hinglish or English' },
+  hi: { head: 'भरोसे से निवेश करें', phrases: ['बोलकर पूछिए', 'आज का बाज़ार समझिए', 'हर IPO की जानकारी', 'ख़बरें आसान भाषा में'], voice: 'हिन्दी, हिंग्लिश या अंग्रेज़ी में बोलिए' },
 } as const;
 
 /** Soft blurred-looking circle drifting slowly; gives the background life without distracting. */
@@ -164,27 +164,15 @@ export default function Welcome() {
                 <DrawingChart color={colors.primary} soft="rgba(11,122,91,0.6)" />
               </Animated.View>
 
-              <View style={{ flexDirection: 'row', gap: space.md, alignItems: 'flex-start' }}>
-                <Animated.View entering={FadeInUp.delay(900).duration(600)} style={{ flex: 1.3 }}>
-                  <Float amp={5} ms={2800}>
-                    <View style={{ backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, padding: space.md, gap: space.sm, minHeight: 92 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-                        <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' }}><Mic size={18} color={colors.primary} /></View>
-                        <Wave color={colors.primary} />
-                      </View>
-                      <Text v="small" tone="soft">{c.voice}</Text>
-                    </View>
-                  </Float>
-                </Animated.View>
-                <Animated.View entering={FadeInUp.delay(1100).duration(600)} style={{ flex: 1 }}>
-                  <Float amp={7} delay={500} ms={3200}>
-                    <View style={{ backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, padding: space.md, gap: space.sm, minHeight: 92 }}>
-                      <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: colors.cautionBg, alignItems: 'center', justifyContent: 'center' }}><ShieldCheck size={18} color={colors.caution} /></View>
-                      <Text v="small" weight="semibold">{c.tip}</Text>
-                    </View>
-                  </Float>
-                </Animated.View>
-              </View>
+              <Animated.View entering={FadeInUp.delay(900).duration(600)}>
+                <Float amp={5} ms={2800}>
+                  <View style={{ backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, padding: space.md, flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+                    <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' }}><Mic size={20} color={colors.primary} /></View>
+                    <Wave color={colors.primary} />
+                    <Text v="small" tone="soft" style={{ flex: 1 }}>{c.voice}</Text>
+                  </View>
+                </Float>
+              </Animated.View>
             </View>
 
             <Animated.View entering={FadeInUp.delay(700).duration(700)} style={{ gap: space.md }}>

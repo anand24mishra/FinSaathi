@@ -20,7 +20,6 @@ import { llmConfigured, llmCall, textOf } from './llm';
 import { AllowedNumbers, validateNarrative } from './guardrails';
 import { detectStyle, styleToLang, STYLE_INSTRUCTION } from './lang';
 import { appendTurn, recentHistory } from './conversations';
-import { isTip, tipChecklist } from './tipCheck';
 import { randomUUID } from 'node:crypto';
 import type { Term } from '../../../shared/contract';
 
@@ -345,7 +344,7 @@ async function llmChat(userId: string, req: ChatRequest): Promise<Draft | null> 
     cites.push(...d.citations); used.push(...d.toolsUsed); outputs.push(d.answer);
     return d.answer;
   };
-  const system = `You are FinSaathi, an investing companion for Indian retail investors, many of them seniors. The user already invests through his own demat accounts but has no technical or fundamental knowledge and often buys what a trusted person tells him to; never assume he knows jargon, explain simply and respectfully, and never tell him to ignore that person: help him check first. ${STYLE_INSTRUCTION[req.style ?? (lang === 'hi' ? 'hi' : 'en')]} Write every number with digits 0-9. Plain text only: no markdown, no asterisks, no bold. Use ONLY the tools; never state a price, number, or fact that a tool did not return. If a tool says data is unavailable, say so. You may report FinSaathi's research calls (BUY, ACCUMULATE, HOLD, REDUCE, SELL) exactly as the tools return them, with their levels and the reminder that it is research, not SEBI-registered advice. Never say guaranteed, sure-shot or risk-free, never promise returns and never predict prices. Explain jargon briefly. Keep answers under 150 words. If no tool fits, say what you can help with.`;
+  const system = `You are FinSaathi, an investing companion for Indian retail investors, many of them seniors. The user already invests through his own demat accounts but has no technical or fundamental knowledge, so never assume he knows jargon: explain simply and respectfully. ${STYLE_INSTRUCTION[req.style ?? (lang === 'hi' ? 'hi' : 'en')]} Write every number with digits 0-9. Plain text only: no markdown, no asterisks, no bold. Use ONLY the tools; never state a price, number, or fact that a tool did not return. If a tool says data is unavailable, say so. You may report FinSaathi's research calls (BUY, ACCUMULATE, HOLD, REDUCE, SELL) exactly as the tools return them, with their levels and the reminder that it is research, not SEBI-registered advice. Never say guaranteed, sure-shot or risk-free, never promise returns and never predict prices. Explain jargon briefly. Keep answers under 150 words. For anything about a named company, a price, the market, news, IPOs, calls or his portfolio you MUST call a tool and never answer from memory. For a general how-to or concept question that no tool covers (for example how to invest in penny stocks, what a mutual fund is, how to start a SIP), answer from general knowledge in simple words: give the principles, the main risks and a sensible first step. In that case state no prices, percentages, limits or rules that you are not certain are universal, recommend no specific stock, and use bullet points (•) instead of numbered lists.`;
   const messages: any[] = [...(req.history ?? []).slice(-6).map((h) => ({ role: h.role, content: h.text })), { role: 'user', content: req.message }];
   for (let i = 0; i < 4; i++) {
     const r = await llmCall({ max_tokens: 700, system, tools: TOOLS, messages });
@@ -358,23 +357,20 @@ async function llmChat(userId: string, req: ChatRequest): Promise<Draft | null> 
       continue;
     }
     const text = plain(textOf(r));
-    if (!text || used.length === 0) return null;
+    if (!text) return null;
+    if (used.length === 0) {
+      // No data tool fits: allow a general-knowledge answer only when the question is not about a specific company and the text
+      // makes no figure-like claims (list numbers are ignored; the usual banned-phrase list still applies).
+      if (resolveStock(req.message)) return null;
+      const body = text.replace(/^\s*\d+[.)]\s+/gm, '');
+      if (!validateNarrative(body, new AllowedNumbers().add(req.message)).ok) return null;
+      return { answer: text, citations: [], toolsUsed: [], kind: 'general' };
+    }
     const allowed = new AllowedNumbers().add(...outputs, req.message);
     if (!validateNarrative(text, allowed).ok) return null;
     return { answer: text, citations: dedupeCites(cites), toolsUsed: [...new Set(used)], kind: 'general' };
   }
   return null;
-}
-
-/** "Boss told me to buy X": FinSaathi's own numbers for the stock (if we can tell which one), then the five questions to ask first. */
-async function tipAnswer(userId: string, req: ChatRequest): Promise<Draft> {
-  const style: ReplyStyle = req.style ?? 'en'; const lang = req.lang;
-  const st = resolveStock(req.message);
-  // Hinglish readers get the stock facts phrased in Hinglish (the model, under the usual number guard); everyone else gets the exact canned text.
-  const phrased = st && style === 'hinglish' ? await llmChat(userId, { ...req, message: `${st.name} ka price kya hai`, history: [] }).catch(() => null) : null;
-  const base = phrased ?? (st ? await stockAnswer(req.message, st, lang) : null);
-  const answer = (base ? base.answer + '\n\n' : '') + tipChecklist(style, st ? (lang === 'hi' && st.hi[0] ? st.hi[0] : st.name) : undefined);
-  return { answer, citations: base?.citations ?? [], toolsUsed: [...(base?.toolsUsed ?? []), 'tipCheck'], kind: 'stock' };
 }
 
 export async function chat(userId: string, req: ChatRequest, opts: { viaVoice?: boolean } = {}): Promise<ChatResponse> {
@@ -396,8 +392,7 @@ export async function chat(userId: string, req: ChatRequest, opts: { viaVoice?: 
   if (!message) return { answer: HELP[lang], citations: [], toolsUsed: [], refused: false, followUps: [...FU[lang].general], generatedBy: 'rules', disclaimer: DISCLAIMER[lang], style };
   const refusal = detectRefusal(message);
   let draft: Draft | null = null; let by: 'rules' | 'llm' = 'rules';
-  if (!refusal && isTip(norm(message))) draft = await tipAnswer(userId, r).catch(() => null); // deterministic on purpose: numbers and checklist must not be improvised
-  if (!refusal && !draft) { try { draft = await llmChat(userId, r); if (draft) by = 'llm'; } catch { draft = null; } }
+  if (!refusal) { try { draft = await llmChat(userId, r); if (draft) by = 'llm'; } catch { draft = null; } }
   if (!draft) draft = await rulesChat(userId, r).catch(() => ({ answer: unavailable(lang, lang === 'en' ? 'That information' : 'वह जानकारी'), citations: [], toolsUsed: [], kind: 'general' as const }));
   return finish({ answer: draft.answer, citations: dedupeCites(draft.citations), toolsUsed: draft.toolsUsed, refused: !!draft.refused, followUps: [...FU[lang][draft.kind]], generatedBy: by, disclaimer: DISCLAIMER[lang], style });
 }
