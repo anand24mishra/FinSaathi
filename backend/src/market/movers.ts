@@ -4,6 +4,7 @@ import type { Lang, MarketMover, MoversFeed, Quote } from '../../../shared/contr
 import { iso } from './http';
 import { isNseOpen, quoteFromBulkRow, type BulkRow, type BulkSnapshot } from './providers/nseLive';
 import { bulkIsFresh, bulkSourceLabel, getBulk, peekBulk } from './bulkSource';
+import { ANGEL_SOURCE, angelHas } from './providers/angel';
 import { refStock } from './reference/nifty50';
 import { tidyName, universeItem } from './universe';
 
@@ -47,19 +48,19 @@ const VOLUME_NOTE = 'Volume leaders are ranked by traded value (this feed has no
 function delayNote(s: BulkSnapshot): string {
   const open = isNseOpen();
   const ageMin = Math.round((Date.now() - s.fetchedAt) / 60_000);
-  const dhan = bulkSourceLabel(s) === 'dhan';
-  const base = dhan
-    ? (open ? 'NSE exchange data via a Dhan trading account, typically a few seconds behind the exchange feed.' : 'Market is closed: figures are the latest session, via a Dhan trading account.')
+  const angel = bulkSourceLabel(s) === 'angel';
+  const base = angel
+    ? (open ? 'Nifty 100 and watched stocks via Angel One broker feed (refreshed every ~5s); other stocks from the NSE website, up to a minute behind.' : 'Market is closed: figures are the latest session (Angel One broker feed for Nifty 100, NSE website for the rest).')
     : open ? 'NSE website data, typically a few seconds to a minute behind the exchange feed; not a licensed real-time feed.'
     : 'Market is closed: figures are the latest session from the NSE website, not a licensed real-time feed.';
   const stale = open && ageMin >= 3 ? ` This copy was fetched ${ageMin} min ago.` : '';
   return `${base}${stale} ${VOLUME_NOTE}`;
 }
 export function feedFromSnapshot(s: BulkSnapshot): MoversFeed {
-  const dhan = bulkSourceLabel(s) === 'dhan';
+  const angel = bulkSourceLabel(s) === 'angel';
   return {
-    asOf: iso(s.asOfMs), source: dhan ? 'NSE exchange data via Dhan (licensed account data feed)' : 'NSE India website (unofficial endpoint)',
-    delayNote: delayNote(s), universe: `${dhan ? 'NSE (via Dhan)' : s.index} (${s.rows.length} stocks)`, count: s.rows.length, ...computeMovers(s.rows),
+    asOf: iso(s.asOfMs), source: angel ? 'Angel One broker feed + NSE India website' : 'NSE India website (unofficial endpoint)',
+    delayNote: delayNote(s), universe: `${angel ? 'NSE (Angel One + NSE website)' : s.index} (${s.rows.length} stocks)`, count: s.rows.length, ...computeMovers(s.rows),
   };
 }
 
@@ -102,5 +103,5 @@ export function getBulkQuote(symbol: string): Quote | null {
   if (!r) return null;
   const q = quoteFromBulkRow(r, s);
   const name = refStock(r.symbol)?.name ?? universeItem(r.symbol)?.name ?? q.name;
-  return bulkSourceLabel(s) === 'dhan' ? { ...q, name, source: 'NSE exchange data via Dhan (licensed account data feed)' } : { ...q, name };
+  return bulkSourceLabel(s) === 'angel' && angelHas(r.symbol) ? { ...q, name, source: ANGEL_SOURCE } : { ...q, name };
 }

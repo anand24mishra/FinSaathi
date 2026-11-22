@@ -8,7 +8,7 @@ import { NIFTY50, refStock, displayName, isWhitelisted, isEquity, normaliseSymbo
 import { ensureUniverse, searchUniverse, universeItem } from './universe';
 import { getBulk } from './bulkSource';
 import { getBulkQuote } from './movers';
-import { dhanConfigured, dhanRowToQuote, getDhanQuote } from './providers/dhan';
+import { angelConfigured, angelRowToQuote, getAngelIndexQuote } from './providers/angel';
 import { computeIndicators, performanceFrom, buildRulesAnalysis, buildFacts, scoreStock } from './analysis/engine';
 import { METHODOLOGY, ideaOneLiner, evidenceText } from './analysis/text';
 import { TtlCache, TTL, iso } from './http';
@@ -39,9 +39,9 @@ export function quoteFromChart(ch: ChartData): Quote {
 export async function getQuote(symbol: string): Promise<Quote> {
   const bulk = getBulkQuote(symbol);   // fresh whole-market snapshot first (Dhan when configured, else NSE website; any listed stock, no Yahoo call)
   if (bulk) return bulk;
-  if (symbol.startsWith('^') && dhanConfigured()) {   // indices are never in the bulk snapshot (it is equities only); try Dhan directly
-    const row = await getDhanQuote(symbol).catch(() => null);
-    if (row) return dhanRowToQuote(symbol, row.name, row);
+  if (symbol.startsWith('^') && angelConfigured()) {   // indices are never in the bulk snapshot (it is equities only); try Angel One directly
+    const row = await getAngelIndexQuote(symbol).catch(() => null);
+    if (row) return angelRowToQuote(symbol, row.name, row);
   }
   try {
     const { data } = await getChart(symbol, '5d');

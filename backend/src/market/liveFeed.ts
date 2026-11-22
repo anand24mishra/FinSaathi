@@ -10,7 +10,7 @@ import { isNseOpen, quoteFromBulkRow } from './providers/nseLive';
 import { bulkIsFresh, getBulk } from './bulkSource';
 import { universeItem } from './universe';
 import { refStock } from './reference/nifty50';
-import { dhanConfigured, dhanRowToQuote } from './providers/dhan';
+import { angelConfigured, angelHas, angelRowToQuote, angelTrack } from './providers/angel';
 
 export interface LiveFeed {
   /** Short source label sent in the WS hello. */
@@ -27,8 +27,8 @@ export interface NseYahooOptions { yahooCapPerPoll?: number; yahooMinGapOpenMs?:
 
 export class NseYahooFeed implements LiveFeed {
   /** Honest labels: dynamic because Dhan can become configured/unconfigured without restarting (renewal, a key going stale). */
-  get name() { return dhanConfigured() ? 'NSE exchange data via a Dhan trading account' : 'NSE India website data (Yahoo Finance fallback for a few symbols)'; }
-  get delayNote() { return dhanConfigured() ? 'A licensed account data feed, typically a few seconds behind the exchange; symbols it does not cover (e.g. non-NSE indices) fall back to Yahoo Finance (unofficial), often ~15 minutes delayed.' : 'Not a licensed real-time feed. NSE website data is typically a few seconds to a minute behind the exchange; symbols outside the NSE snapshot come from Yahoo Finance (unofficial), often ~15 minutes delayed.'; }
+  get name() { return angelConfigured() ? 'Angel One broker feed (NSE website for other stocks)' : 'NSE India website data (Yahoo Finance fallback for a few symbols)'; }
+  get delayNote() { return angelConfigured() ? 'Broker market feed refreshed about every 5 seconds for Nifty 100 and watched stocks; other symbols come from the NSE website or Yahoo Finance (unofficial, can lag).' : 'Not a licensed real-time feed. NSE website data is typically a few seconds to a minute behind the exchange; symbols outside the NSE snapshot come from Yahoo Finance (unofficial), often ~15 minutes delayed.'; }
   private yahoo = new Map<string, { at: number; quote: Quote }>();
   private opts: Required<NseYahooOptions>;
   constructor(o: NseYahooOptions = {}) {
@@ -36,13 +36,14 @@ export class NseYahooFeed implements LiveFeed {
   }
   async poll(symbols: string[]): Promise<Quote[]> {
     const out: Quote[] = [];
+    if (angelConfigured()) angelTrack(symbols);
     const snap = await getBulk().catch(() => null);
     const missing: string[] = [];
     for (const s of symbols) {
       const r = bulkIsFresh(snap) ? snap!.bySymbol.get(s) : undefined;
       if (r && snap) {
         const name = refStock(s)?.name ?? universeItem(s)?.name ?? r.name;
-        out.push(snap.index === 'DHAN' ? dhanRowToQuote(s, name, r) : { ...quoteFromBulkRow(r, snap), name });
+        out.push(snap.index === 'ANGEL' && angelHas(s) ? angelRowToQuote(s, name, r) : { ...quoteFromBulkRow(r, snap), name });
       }
       else missing.push(s);
     }
