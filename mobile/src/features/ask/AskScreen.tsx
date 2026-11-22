@@ -4,6 +4,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, { Easing, FadeInDown, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
 import * as Speech from 'expo-speech';
+import { setAudioModeAsync } from 'expo-audio';
 import { ArrowUp, ChevronDown, ChevronUp, History, Mic, Square, SquarePen, Trash2, Volume2 } from 'lucide-react-native';
 import { Text } from '@/components/Text';
 import { Chip } from '@/components/Chip';
@@ -33,6 +34,7 @@ const CUR = 'finsaathi.chat.current';      // id of the conversation to resume
 /** Hindi is read in a Hindi voice; Hinglish (Hindi in English letters) reads best in an Indian-English voice. */
 const speak = (text: string, style?: ReplyStyle) => {
   Speech.stop();
+  setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false }).catch(() => {}); // iPhone: read aloud even when the silent switch is on
   Speech.speak(text.replace(/[•*_#]/g, ' ').replace(/\s+/g, ' '), { language: style === 'hi' ? 'hi-IN' : 'en-IN', rate: 0.92 });
 };
 

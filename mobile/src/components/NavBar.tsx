@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, View } from 'react-native';
+import { Keyboard, Platform, Pressable, View } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CalendarDays, MessageCircleQuestion, Newspaper, TrendingUp, Wallet, type LucideIcon } from 'lucide-react-native';
@@ -31,7 +31,16 @@ export function NavBar() {
   const t = useT();
   const active = activeTab(usePathname());
   const router = useRouter();
+  const [kb, setKb] = React.useState(false);
+  React.useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    const a = Keyboard.addListener('keyboardWillShow', () => setKb(true));
+    const b = Keyboard.addListener('keyboardWillHide', () => setKb(false));
+    return () => { a.remove(); b.remove(); };
+  }, []);
   const go = (name: string) => router.navigate(ROUTE[name] as never);
+
+  if (kb && !isDesktop) return null; // iPhone: the keyboard pushes the bar up over the chat box
 
   if (isDesktop) {
     return (

@@ -1,20 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
-import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder } from 'expo-audio';
+import { IOSOutputFormat, AudioQuality, RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder } from 'expo-audio';
 import { File } from 'expo-file-system';
 
 export type VoiceState = 'idle' | 'recording' | 'processing';
 export type VoiceError = 'denied' | 'failed' | 'tooShort';
-export type Clip = { base64: string; mimeType: 'audio/aac' | 'audio/mp4' | 'audio/webm' };
+export type Clip = { base64: string; mimeType: 'audio/aac' | 'audio/wav' | 'audio/webm' };
 
 const MAX_SECONDS = 60;
-// Android records AAC in an ADTS stream (plain .aac), iOS records AAC in an .m4a container, the web uses the browser's webm.
+// Android records AAC in an ADTS stream (plain .aac), iOS records 16-bit PCM WAV (Gemini does not reliably accept m4a), the web uses the browser's webm.
 // 16 kHz mono is plenty for speech and keeps a 60-second clip well under 1 MB.
 const OPTIONS =
   Platform.OS === 'android'
     ? { ...RecordingPresets.HIGH_QUALITY, extension: '.aac', sampleRate: 16000, numberOfChannels: 1, bitRate: 32000, android: { outputFormat: 'aac_adts' as const, audioEncoder: 'aac' as const } }
-    : RecordingPresets.HIGH_QUALITY;
-const MIME: Clip['mimeType'] = Platform.OS === 'android' ? 'audio/aac' : Platform.OS === 'web' ? 'audio/webm' : 'audio/mp4';
+    : Platform.OS === 'ios'
+      ? { ...RecordingPresets.HIGH_QUALITY, extension: '.wav', sampleRate: 16000, numberOfChannels: 1, ios: { outputFormat: IOSOutputFormat.LINEARPCM, audioQuality: AudioQuality.MEDIUM, linearPCMBitDepth: 16, linearPCMIsBigEndian: false, linearPCMIsFloat: false } }
+      : RecordingPresets.HIGH_QUALITY;
+const MIME: Clip['mimeType'] = Platform.OS === 'android' ? 'audio/aac' : Platform.OS === 'web' ? 'audio/webm' : 'audio/wav';
 
 /** Chunked, because String.fromCharCode(...bigArray) overflows the call stack. */
 function toBase64(buf: ArrayBuffer): string {
