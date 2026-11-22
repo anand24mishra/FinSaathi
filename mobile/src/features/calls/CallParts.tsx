@@ -2,7 +2,7 @@ import React from 'react';
 import { Pressable, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import Animated, { Easing, useAnimatedProps, useReducedMotion, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
-import { Activity, Newspaper, Rocket, Scale, type LucideIcon } from 'lucide-react-native';
+import { Activity, Check, ChevronDown, ChevronUp, Newspaper, Rocket, Scale, TriangleAlert, type LucideIcon } from 'lucide-react-native';
 import { Text } from '@/components/Text';
 import { Panel } from '@/components/Layout';
 import { Change } from '@/components/Change';
@@ -83,26 +83,57 @@ function Ring({ score, color, track, size = 68 }: { score: number | null; color:
 
 const LENS_ICON: Record<PersonaScore['key'], LucideIcon> = { buffett: Scale, jhunjhunwala: Rocket, technical: Activity, sentiment: Newspaper };
 
+/** "Quality & value score 36/100 from 7 checks: ROE 15.9% (>15% good); Debt/Equity 1.24 (>1 weak)" -> one short line per check. */
+function checkLines(summary: string): string[] {
+  const i = summary.indexOf(': ');
+  const body = (i >= 0 ? summary.slice(i + 2) : summary).trim();
+  return body.split(/;\s*/).map((x) => x.trim().replace(/\.$/, '')).filter(Boolean);
+}
+/** Good, weak or neutral from the English hint at the end of a check, e.g. "(>15% good)". Other languages stay neutral. */
+const checkTone = (x: string): 'good' | 'weak' | 'fair' | 'none' =>
+  /\b(weak|stretched|little|low|poor|falling|negative|high debt)\b/i.test(x) ? 'weak' : /\b(good|strong|healthy|cheap|rising|positive|uptrend)\b/i.test(x) ? 'good' : /\b(fair|decent|okay|mixed)\b/i.test(x) ? 'fair' : 'none';
+
 function Bar({ p }: { p: PersonaScore }) {
   const { colors } = useTheme(); const t = useT();
+  const [open, setOpen] = React.useState(false);
   const band = useBand()(p.score);
   const Icon = LENS_ICON[p.key] ?? Scale;
+  const title = t(`lens.t.${p.key}` as Key);
+  const lines = checkLines(p.summary);
+  const ToneIcon = ({ x }: { x: string }) => {
+    const k = checkTone(x);
+    return k === 'good' ? <Check size={16} color={colors.gain} strokeWidth={3} /> : k === 'weak' ? <TriangleAlert size={16} color={colors.loss} strokeWidth={2.5} /> : <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: k === 'fair' ? colors.caution : colors.inkSoft, marginHorizontal: 5 }} />;
+  };
   return (
-    <View accessible accessibilityLabel={`${p.label}, ${p.score == null ? t('calls.noData') : `${p.score} / 100, ${t(`lens.${band.key}` as Key)}`}. ${p.summary}`}
-      style={{ flexDirection: 'row', gap: space.md, alignItems: 'center', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, borderLeftWidth: 4, borderLeftColor: band.fg, borderRadius: radius.md, padding: space.md }}>
-      <Ring score={p.score} color={band.fg} track={band.bg} />
-      <View style={{ flex: 1, gap: 6 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-          <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: band.bg, alignItems: 'center', justifyContent: 'center' }}><Icon size={16} color={band.fg} strokeWidth={2.25} /></View>
-          <Text v="small" weight="bold" style={{ flex: 1 }}>{p.label}</Text>
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-          <View style={{ backgroundColor: band.bg, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 3 }}>
-            <Text v="small" weight="bold" style={{ color: band.fg }}>{p.score == null ? t('calls.noData') : t(`lens.${band.key}` as Key)}</Text>
+    <View style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: open ? band.fg : colors.line, borderRadius: radius.lg, overflow: 'hidden' }}>
+      <Pressable onPress={() => setOpen((v) => !v)} accessibilityRole="button" accessibilityState={{ expanded: open }}
+        accessibilityLabel={`${title}, ${p.score == null ? t('calls.noData') : `${p.score} / 100, ${t(`lens.${band.key}` as Key)}`}. ${t('lens.why')}`}
+        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.md, minHeight: 80, backgroundColor: pressed ? colors.surfaceAlt : 'transparent' })}>
+        <Ring score={p.score} color={band.fg} track={band.bg} size={60} />
+        <View style={{ flex: 1, gap: 6 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+            <Icon size={18} color={band.fg} strokeWidth={2.25} />
+            <Text v="body" weight="bold" style={{ flex: 1 }}>{title}</Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+            <View style={{ backgroundColor: band.bg, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 3 }}>
+              <Text v="small" weight="bold" style={{ color: band.fg }}>{p.score == null ? t('calls.noData') : t(`lens.${band.key}` as Key)}</Text>
+            </View>
+            <Text v="small" tone="soft">{t('lens.why')}</Text>
           </View>
         </View>
-        <Text v="small" tone="soft">{p.summary}</Text>
-      </View>
+        {open ? <ChevronUp size={22} color={colors.inkSoft} /> : <ChevronDown size={22} color={colors.inkSoft} />}
+      </Pressable>
+      {open ? (
+        <View style={{ gap: space.sm, paddingHorizontal: space.md, paddingBottom: space.md, paddingTop: space.xs, borderTopWidth: 1, borderTopColor: colors.line }}>
+          {lines.map((x, i) => (
+            <View key={i} style={{ flexDirection: 'row', gap: space.sm, alignItems: 'flex-start' }}>
+              <View style={{ width: 18, alignItems: 'center', paddingTop: 3 }}><ToneIcon x={x} /></View>
+              <Text v="small" style={{ flex: 1 }}>{x}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -144,7 +175,7 @@ export function CallCard({ call, wide }: { call: StockCall; wide: boolean }) {
             <Text v="label" tone="primary" weight="bold">{t('calls.lenses').toUpperCase()}</Text>
             <Text v="small" tone="soft">{t('lens.hint')}</Text>
           </View>
-          <View style={{ gap: space.md }}>{call.personas.map((p) => <Bar key={p.key} p={p} />)}</View>
+          <View style={{ gap: space.sm }}>{call.personas.map((p) => <Bar key={p.key} p={p} />)}</View>
         </Panel>
         <Panel style={{ flex: wide ? 1.2 : undefined, width: wide ? undefined : '100%', gap: space.lg, borderRadius: radius.lg, padding: space.xl }}>
           <Text v="label" tone="gain" weight="bold">{t('calls.bull').toUpperCase()}</Text>
