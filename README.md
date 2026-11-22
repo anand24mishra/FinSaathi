@@ -22,7 +22,7 @@ A bilingual (Hindi and English) mobile app and backend for Indian retail investo
 | Charts and fundamentals | Yahoo Finance |
 | Mutual funds | MFAPI |
 | Currency | Frankfurter |
-| News | Publisher RSS feeds |
+| News | Publisher RSS feeds and the public Telegram channels of Mint, BusinessLine, Moneycontrol and Business Standard |
 
 The backend signs in to Angel One by itself using a time-based one-time password, so no access token needs to be copied or refreshed by hand. If a source is unavailable, the backend falls back to the next one.
 

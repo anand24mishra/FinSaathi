@@ -6,18 +6,22 @@
 //  2. Every item is community/unverified chatter (origin 'telegram', community '@handle'), never a call.
 //  3. Posts that look like tips or promotions are dropped (looksLikeTip), as are forwards, ads and photo-only posts.
 //
-// Handle verification, run from the dev machine on 2026-11-21 with curl (this network is flaky: many t.me/s/<handle>
-// requests simply time out, so "no response" below means unreachable from here, not necessarily non-existent):
-//   ACCEPTED  livemint          "Mint Business News - Official Channel", 20 posts, newest 2026-11-20, on-topic business news.
-//   ACCEPTED  hindubusinessline "BusinessLine" (The Hindu businessline, official), 20 posts, newest 2026-11-20, on-topic.
-//   REJECTED  ETMarkets (an Ethiopian market channel, not Economic Times), thehindubusinessline (stale since 2023, a
-//             different channel), businessstandard/BusinessStandard (squatted "Business Standart", 3 posts),
-//             bloombergquint (empty squat), MoneycontrolOfficial (unofficial, last post 2023), BusinessTodayOfficial
-//             (last post 2026-03), timesofindia (last post 2022), indianexpress (general news, 3 weeks idle),
-//             bloomberg (unofficial, idle since Sep 2026), ndtv (squat, 4 posts from 2024).
-//   NO PREVIEW (302 to the landing page, i.e. no such public channel): NSEIndia, BSEIndia, sebi_official, RBI_Official,
-//             RBI_India, PIB_India, etnow, cnbctv18, zeebusiness, moneycontrol, ndtvprofit, reuters_india, SEBI_India.
-//   UNREACHABLE (timeouts on every try): economictimes, financialexpress, CNBCTV18News, ETNOWlive, RBIofficial, pib_india.
+// Handle verification (curl against https://t.me/s/<handle>, 2026-11-21 and re-checked 2026-11-22 by READING the posts, not just
+// the channel name; this network is flaky, so "no response" means unreachable from here, not necessarily non-existent):
+//   ACCEPTED  livemint          "Mint Business News - Official Channel", 20 posts, newest same day, on-topic business news.
+//   ACCEPTED  hindubusinessline "BusinessLine" (The Hindu businessline, official), 20 posts, newest same day, on-topic.
+//   ACCEPTED  moneycontrolcom   "Moneycontrol" (description links the outlet's own Facebook/Twitter), 20 posts, newest same day.
+//   ACCEPTED  bsindiaofficial   "Business Standard Official" ("The official Telegram channel of Business Standard"), newest 2026-11-21.
+//   REJECTED AS FRAUD  cnbcawaaz (active, but the posts are a crypto "profit" scam, not the broadcaster), varsity (sells
+//             hacked-style social-media accounts, nothing to do with Zerodha Varsity).
+//   REJECTED  equitymasterofficial (real publisher, but posts are paid-research promotions and stock lists, i.e. tip-like),
+//             ETMarkets (an Ethiopian market channel), thehindubusinessline (stale since 2023), businessstandard (squatted
+//             "Business Standart"), bloombergquint (idle since 2024), MoneycontrolOfficial (last post 2023), BusinessTodayOfficial /
+//             businesstodayofficial (last post 2026-03), economictimesofficial / financialexpressofficial / zerodhaonline /
+//             zerodhavarsity (frozen since 2023), cnbctv18news (2 posts, 2024), sebiindia (1 post, 2022), timesofindia,
+//             indianexpress (general news, weeks idle), ndtv.
+//   NO PUBLIC PREVIEW (no such channel): NSEIndia, BSEIndia, sebi_official, RBI_Official, PIB_India, etnow, cnbctv18, zeebusiness,
+//             moneycontrol, ndtvprofit, economictimes, financialexpress, reuters_india.
 // Re-run scripts/smoke-telegram.ts to re-check, and add handles only after reading their preview by eye.
 import type { SocialPost, SourceStatus } from '../../../../shared/contract';
 import { detectRefusal } from '../../ai/assistant';
@@ -27,7 +31,7 @@ import { matchSymbols } from '../news';
 import { headlineSentiment } from '../sentiment';
 import { fetchOnce } from './reddit';
 
-export const DEFAULT_TELEGRAM_CHANNELS = ['livemint', 'hindubusinessline'] as const;
+export const DEFAULT_TELEGRAM_CHANNELS = ['livemint', 'hindubusinessline', 'moneycontrolcom', 'bsindiaofficial'] as const;
 export const TELEGRAM_UA = 'FinSaathi/1.0 (local personal use; public channel preview reader)';
 export const MAX_POST_AGE_MS = 7 * 24 * 3600_000;
 type FetchFn = typeof fetch;
