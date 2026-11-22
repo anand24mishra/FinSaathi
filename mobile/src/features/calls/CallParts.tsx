@@ -1,5 +1,8 @@
 import React from 'react';
 import { Pressable, View } from 'react-native';
+import Svg, { Circle } from 'react-native-svg';
+import Animated, { Easing, useAnimatedProps, useReducedMotion, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
+import { Activity, Newspaper, Rocket, Scale, type LucideIcon } from 'lucide-react-native';
 import { Text } from '@/components/Text';
 import { Panel } from '@/components/Layout';
 import { Change } from '@/components/Change';
@@ -45,16 +48,61 @@ export function CallRow({ call, onPress, last, live }: { call: StockCall; onPres
   );
 }
 
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+
+/** Strong, fair or weak: the same three bands everywhere so a glance is enough. */
+function useBand() {
+  const { colors: c } = useTheme();
+  return (score: number | null) =>
+    score == null ? { key: 'none' as const, fg: c.inkSoft, bg: c.surfaceAlt }
+    : score >= 65 ? { key: 'strong' as const, fg: c.gain, bg: c.gainBg }
+    : score >= 40 ? { key: 'fair' as const, fg: c.caution, bg: c.cautionBg }
+    : { key: 'weak' as const, fg: c.loss, bg: c.lossBg };
+}
+
+/** Circular score that fills in when the card appears. */
+function Ring({ score, color, track, size = 68 }: { score: number | null; color: string; track: string; size?: number }) {
+  const reduce = useReducedMotion();
+  const stroke = 7; const r = (size - stroke) / 2; const C = 2 * Math.PI * r;
+  const target = score == null ? 0 : Math.max(2, Math.min(100, score)) / 100;
+  const p = useSharedValue(reduce ? target : 0);
+  React.useEffect(() => { p.value = reduce ? target : withDelay(150, withTiming(target, { duration: 900, easing: Easing.out(Easing.cubic) })); }, [p, target, reduce]);
+  const arc = useAnimatedProps(() => ({ strokeDashoffset: C * (1 - p.value) }));
+  return (
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg width={size} height={size}>
+        <Circle cx={size / 2} cy={size / 2} r={r} stroke={track} strokeWidth={stroke} fill="none" strokeDasharray={score == null ? [4, 6] : undefined} />
+        {score != null ? <AnimatedCircle cx={size / 2} cy={size / 2} r={r} stroke={color} strokeWidth={stroke} strokeLinecap="round" fill="none" strokeDasharray={[C, C]} animatedProps={arc} rotation={-90} origin={`${size / 2}, ${size / 2}`} /> : null}
+      </Svg>
+      <View style={{ position: 'absolute', alignItems: 'center' }}>
+        <Text v="bodyLg" weight="bold" num style={{ color, lineHeight: 22 }}>{score == null ? '—' : score}</Text>
+      </View>
+    </View>
+  );
+}
+
+const LENS_ICON: Record<PersonaScore['key'], LucideIcon> = { buffett: Scale, jhunjhunwala: Rocket, technical: Activity, sentiment: Newspaper };
+
 function Bar({ p }: { p: PersonaScore }) {
   const { colors } = useTheme(); const t = useT();
+  const band = useBand()(p.score);
+  const Icon = LENS_ICON[p.key] ?? Scale;
   return (
-    <View style={{ gap: 6 }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: space.md }}>
-        <Text v="small" weight="semibold" style={{ flex: 1 }}>{p.label}</Text>
-        <Text v="small" tone={p.score == null ? 'soft' : 'ink'} num weight="bold">{p.score == null ? t('calls.noData') : `${p.score}/100`}</Text>
+    <View accessible accessibilityLabel={`${p.label}, ${p.score == null ? t('calls.noData') : `${p.score} / 100, ${t(`lens.${band.key}` as Key)}`}. ${p.summary}`}
+      style={{ flexDirection: 'row', gap: space.md, alignItems: 'center', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, borderLeftWidth: 4, borderLeftColor: band.fg, borderRadius: radius.md, padding: space.md }}>
+      <Ring score={p.score} color={band.fg} track={band.bg} />
+      <View style={{ flex: 1, gap: 6 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+          <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: band.bg, alignItems: 'center', justifyContent: 'center' }}><Icon size={16} color={band.fg} strokeWidth={2.25} /></View>
+          <Text v="small" weight="bold" style={{ flex: 1 }}>{p.label}</Text>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+          <View style={{ backgroundColor: band.bg, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 3 }}>
+            <Text v="small" weight="bold" style={{ color: band.fg }}>{p.score == null ? t('calls.noData') : t(`lens.${band.key}` as Key)}</Text>
+          </View>
+        </View>
+        <Text v="small" tone="soft">{p.summary}</Text>
       </View>
-      <View style={{ height: 8, borderRadius: 8, backgroundColor: colors.surfaceAlt }}>{p.score != null ? <View style={{ height: 8, borderRadius: 8, width: `${Math.max(2, p.score)}%`, backgroundColor: colors.primary }} /> : null}</View>
-      <Text v="small" tone="soft">{p.summary}</Text>
     </View>
   );
 }
@@ -92,8 +140,11 @@ export function CallCard({ call, wide }: { call: StockCall; wide: boolean }) {
       </Panel>
       <View style={{ flexDirection: wide ? 'row' : 'column', gap: space.lg, alignItems: 'flex-start' }}>
         <Panel style={{ flex: wide ? 1 : undefined, width: wide ? undefined : '100%', gap: space.lg, borderRadius: radius.lg, padding: space.xl }}>
-          <Text v="label" tone="primary" weight="bold">{t('calls.lenses').toUpperCase()}</Text>
-          {call.personas.map((p) => <Bar key={p.key} p={p} />)}
+          <View style={{ gap: 2 }}>
+            <Text v="label" tone="primary" weight="bold">{t('calls.lenses').toUpperCase()}</Text>
+            <Text v="small" tone="soft">{t('lens.hint')}</Text>
+          </View>
+          <View style={{ gap: space.md }}>{call.personas.map((p) => <Bar key={p.key} p={p} />)}</View>
         </Panel>
         <Panel style={{ flex: wide ? 1.2 : undefined, width: wide ? undefined : '100%', gap: space.lg, borderRadius: radius.lg, padding: space.xl }}>
           <Text v="label" tone="gain" weight="bold">{t('calls.bull').toUpperCase()}</Text>
