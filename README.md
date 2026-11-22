@@ -1,141 +1,90 @@
-# FinSaathi · फ़िनसाथी 🇮🇳📈
+# FinSaathi
 
-> **AI-Powered Indian Market Intelligence & Financial Companion**
-> Real-time NSE/BSE data, intelligent investment personas, bilingual (Hindi & English) insights, portfolio tracking, and instant alerts.
+A bilingual (Hindi and English) mobile app and backend for Indian retail investors. It brings together NSE market data, stock research, portfolio tracking, mutual funds, IPOs, news and price alerts in one place.
 
----
+## Features
 
-## ✨ Overview
+- **Markets**: Nifty 50, Sensex and Bank Nifty, top gainers and losers, FII/DII flows, IPO listings and mutual fund NAVs.
+- **Stock research**: price charts, fundamentals, and two rule-based analysis styles (long-term quality and growth momentum).
+- **Portfolio**: holdings, profit and loss, sector allocation and diversification checks.
+- **Alerts**: price and news alerts delivered as push notifications and through a Telegram bot.
+- **Assistant**: question-and-answer help on markets and personal finance, with an educational disclaimer on every answer.
+- **Learn**: short lessons on common investing concepts.
+- **Hindi and English**: the interface, news summaries and glossary are available in both languages.
 
-**FinSaathi** is a modern, bilingual financial companion engineered specifically for Indian retail investors. Bridging the gap between raw financial metrics and actionable investor intelligence, FinSaathi combines real-time market data across equities, mutual funds, and IPOs with persona-driven AI analysis modeled after legendary investment philosophies (Warren Buffett and Rakesh Jhunjhunwala).
+## Market data sources
 
-### 🚀 Key Highlights
+| Data | Source |
+|---|---|
+| Live NSE quotes and indices | Angel One SmartAPI (free), refreshed about every 5 seconds and shared across users |
+| Wider stock universe | NSE India website |
+| Charts and fundamentals | Yahoo Finance |
+| Mutual funds | MFAPI |
+| Currency | Frankfurter |
+| News | Publisher RSS feeds |
 
-- **Bilingual Interface**: Seamless Hindi and English localization across all financial terms, news summaries, and AI conversations.
-- **Multi-Source Market Feeds**: Integration with NSE Live, Angel One SmartAPI (free, 5s cache), Yahoo Finance, MFAPI (Mutual Funds), and Frankfurter currency feeds.
-- **Legend Persona Analysis**: Dual-perspective fundamental and momentum evaluation:
-  - **Buffett Style**: Moat evaluation, free cash flow consistency, ROE/ROCE compounding, debt coverage, and margin of safety.
-  - **Jhunjhunwala Style**: Growth momentum, sector tailwinds, Capex cycles, and high operating leverage.
-- **Smart Portfolio Management**: Real-time asset allocation, risk distribution, gain/loss metrics, and diversification scoring.
-- **Live WebSocket Feeds**: Sub-second ticker broadcasts for Nifty 50, Bank Nifty, top gainers, and top losers.
-- **Omni-Channel Alerts**: Configurable price thresholds and breaking market news sent directly via push notifications and Telegram bot.
+The backend signs in to Angel One by itself using a time-based one-time password, so no access token needs to be copied or refreshed by hand. If a source is unavailable, the backend falls back to the next one.
 
----
-
-## 🏗️ Architecture
+## Repository layout
 
 ```
-fin-saathi/
-├── backend/                  # Fastify + TypeScript server
-│   ├── src/
-│   │   ├── agent/            # Autonomous research & market analyst agents
-│   │   ├── ai/               # LLM integration, guardrails & narration
-│   │   ├── core/             # Auth, portfolio, alerts, Telegram bot & SQLite DB
-│   │   ├── market/           # Providers (Angel One, NSE, Yahoo, MFAPI, RSS), analysis engine
-│   │   └── server.ts         # Fastify HTTP & WebSocket server entrypoint
-│   └── package.json
-├── mobile/                   # Expo React Native mobile application
-│   ├── app/                  # Expo Router file-based navigation
-│   ├── src/
-│   │   ├── api/              # Strongly typed API client & contract hooks
-│   │   ├── components/       # Design system UI components (cards, charts, buttons)
-│   │   ├── features/         # Markets, Stock Details, Portfolio, Ask AI, Learn
-│   │   ├── i18n/             # English/Hindi translations & financial glossary
-│   │   ├── live/             # WebSocket live feed subscriber & ticker hooks
-│   │   └── theme/            # Semantic tokenized color & typography system
-│   └── package.json
-├── shared/                   # Shared TypeScript contracts & schemas
-│   └── contract.ts
-└── start.sh                  # One-click startup script (API + Metro dev server)
+backend/    Fastify + TypeScript API and WebSocket server
+  src/core/     authentication, portfolio, alerts, Telegram bot, SQLite storage
+  src/market/   data providers and analysis
+  src/ai/       assistant integration and guardrails
+mobile/     Expo (React Native) application
+  app/          file-based routes
+  src/          API client, components, features, translations, live-quote client
+shared/     TypeScript types shared by backend and mobile
+start.sh    starts the backend and the Expo dev server
 ```
 
----
+## Tech stack
 
-## 🛠️ Tech Stack
+- **Mobile**: Expo SDK 58, React Native 0.88, Expo Router, NativeWind, Reanimated
+- **Backend**: Node.js, TypeScript, Fastify, WebSocket, SQLite
+- **Testing**: Vitest
 
-### Mobile Client
-- **Framework**: [Expo SDK 58](https://expo.dev/) with [React Native 0.88](https://reactnative.dev/)
-- **Navigation**: [Expo Router](https://docs.expo.dev/router/introduction/) (File-based routing)
-- **Styling**: [NativeWind v5](https://www.nativewind.dev/) (Tailwind CSS v4 engine) with semantic design tokens
-- **Icons**: [Lucide React Native](https://lucide.dev/)
-- **Animation**: [React Native Reanimated](https://docs.swmansion.com/react-native-reanimated/) & [Legend Motion](https://legendapp.com/open-source/motion/)
-- **Storage**: [Expo SecureStore](https://docs.expo.dev/versions/latest/sdk/securestore/) & AsyncStorage
+## Getting started
 
-### Backend Service
-- **Runtime**: [Node.js](https://nodejs.org/) (ES Modules) with [TypeScript](https://www.typescriptlang.org/)
-- **Web Framework**: [Fastify](https://fastify.dev/) with HTTP/2 and WebSocket support
-- **Market Data**: Angel One SmartAPI, NSE India Scraping/Live, Yahoo Finance API, MFAPI
-- **AI Engine**: Anthropic Claude API / LLM abstraction layer with strict financial advice guardrails
-- **Database**: Embedded SQLite with AES-256 encrypted credentials
-- **Bot Engine**: Telegram Bot API for real-time portfolio threshold alerts
+Requirements: Node.js 20 or later, npm 10 or later, and the Expo Go app or an emulator.
 
----
+```bash
+git clone https://github.com/anand24mishra/FinSaathi.git
+cd FinSaathi
 
-## ⚡ Getting Started
+cp backend/.env.example backend/.env
+cp mobile/.env.example mobile/.env
 
-### Prerequisites
+cd backend && npm install
+cd ../mobile && npm install
+cd ..
 
-- **Node.js** >= 20.x
-- **npm** >= 10.x
-- **Expo Go** on your physical iOS or Android device (or an emulator/simulator)
+./start.sh
+```
 
-### Quick Start
+The API listens on `http://localhost:4000` and the Expo dev server on `http://localhost:8081`.
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/anand24mishra/FinSaathi.git
-   cd FinSaathi
-   ```
+### Configuration
 
-2. **Configure environment variables:**
-   ```bash
-   cp backend/.env.example backend/.env
-   cp mobile/.env.example mobile/.env
-   ```
-   *(Add your Angel One credentials (ANGEL_API_KEY, ANGEL_CLIENT_CODE, ANGEL_PIN, ANGEL_TOTP_SECRET), Anthropic API key, or Telegram Bot Token if live external integrations are needed; dummy/cached fallbacks work out of the box).*
+All settings are environment variables in `backend/.env` and all are optional (`JWT_SECRET` is generated on first run). Without the market-data variables the backend serves data from the NSE website and Yahoo Finance.
 
-3. **Install dependencies:**
-   ```bash
-   cd backend && npm install
-   cd ../mobile && npm install
-   cd ..
-   ```
+| Variable | Purpose |
+|---|---|
+| `ANGEL_API_KEY`, `ANGEL_CLIENT_CODE`, `ANGEL_PIN`, `ANGEL_TOTP_SECRET` | Angel One SmartAPI live quotes. Create an app at smartapi.angelone.in and enable TOTP to get these. |
+| `GEMINI_API_KEY` or `ANTHROPIC_API_KEY` | Enables the assistant |
+| `TELEGRAM_BOT_TOKEN` | Enables the Telegram alert bot |
+| `KEEPALIVE`, `KEEPALIVE_HOURS_IST` | Self-ping settings for free hosting (see below) |
 
-4. **Start both Backend and Mobile:**
-   ```bash
-   chmod +x start.sh
-   ./start.sh
-   ```
-   - Backend API: `http://localhost:4000`
-   - Metro Dev Server: `http://localhost:8081`
+## Deployment on Render (free tier)
 
----
+Render free web services sleep after 15 minutes without incoming requests. Two free mechanisms keep the service awake:
 
-## 📱 Mobile App Screens
+- `backend/src/core/keepAlive.ts` requests the service's own `/v1/health` every 10 minutes. It uses the `RENDER_EXTERNAL_URL` variable that Render sets automatically. Set `KEEPALIVE=off` to disable it, or `KEEPALIVE_HOURS_IST=06-24` to allow sleeping overnight.
+- `.github/workflows/keep-alive.yml` makes the same request every 10 minutes from GitHub Actions, which is free for public repositories and can also wake a sleeping service.
 
-- **Markets**: Real-time Nifty 50, Sensex, Sector indices, FII/DII data, Gainers/Losers, IPO calendar, and Mutual Fund NAVs.
-- **Stock Analysis**: Candlestick/line charts, technical indicators (RSI, MACD, Moving Averages), and Buffett vs. Jhunjhunwala scorecards.
-- **Ask FinSaathi**: Interactive conversational financial assistant with voice support and Hinglish/Hindi fluency.
-- **Portfolio & Risk**: Live P&L, sector allocation pie charts, beta risk score, and automated dividend tracking.
-- **Learn Hub**: Interactive modules explaining P/E ratio, market cap, compounding, mutual fund categories, and derivatives basics.
+Free instance hours are 750 per month for the whole Render workspace. One always-on service uses at most 744, so keep it the only free service in that workspace.
 
----
+## Disclaimer
 
-## 🔒 Security & Guardrails
-
-FinSaathi implements strict financial compliance guardrails:
-- **Disclaimer Enforcement**: Every AI analysis includes a disclaimer clarifying that outputs are for educational research and not SEBI-registered investment advice.
-- **Data Protection**: User broker tokens and portfolio balances are stored encrypted locally and never transmitted unhashed.
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Render free tier: always on
-Render's free web services sleep after 15 minutes without inbound traffic (cold start ~1 min, and the live market cache stops).
-Two free pingers keep ours awake: `backend/src/core/keepAlive.ts` (pings its own `RENDER_EXTERNAL_URL/v1/health` every 10 min; set
-`KEEPALIVE=off` to disable, or `KEEPALIVE_HOURS_IST=06-24` to let it sleep overnight) and `.github/workflows/keep-alive.yml` (GitHub Actions cron,
-free on public repos; it can also wake the service). One always-on service uses at most 744 of the workspace's 750 free hours per month, so keep it
-the only free service in that Render workspace, or two of them will exhaust the pool and Render suspends all free services until next month.
+FinSaathi is for education and research. Nothing in the app is investment advice, and it is not a SEBI-registered advisory service. Market data may be delayed or incomplete.
