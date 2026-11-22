@@ -1,36 +1,33 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { TopBar } from '@/components/TopBar';
-import { useConnectivity } from '@/components/Connectivity';
-import { useType } from '@/theme/type';
-import { MAX_WIDTH } from '@/theme/tokens';
-import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
-import { Send, FileText, Mic, Square, History, SquarePen, Volume2, VolumeX } from 'lucide-react-native';
+import Animated, { Easing, FadeInDown, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
 import * as Speech from 'expo-speech';
-import { Screen } from '@/components/Screen';
+import { ArrowUp, ChevronDown, ChevronUp, History, Mic, ShieldCheck, Square, SquarePen, Trash2, Volume2 } from 'lucide-react-native';
 import { Text } from '@/components/Text';
-import { Button } from '@/components/Button';
 import { Chip } from '@/components/Chip';
-import { Field } from '@/components/Field';
 import { Banner } from '@/components/Banner';
+import { TopBar } from '@/components/TopBar';
 import { Cluster, useLayout } from '@/components/Layout';
 import { RichText } from '@/components/Term';
+import { useConnectivity } from '@/components/Connectivity';
 import { api, ApiError } from '@/api/client';
 import type { ChatMessage, ChatResponse, Citation, Conversation, ReplyStyle } from '@/api/contract';
-import { useVoice } from './useVoice';
-import { ChatHistorySheet } from './ChatHistorySheet';
 import { useApp } from '@/state/AppState';
 import { useT, type Key } from '@/i18n';
 import { getJSON, removeKey, setJSON } from '@/lib/storage';
 import { formatDateTime } from '@/lib/format';
 import { useTheme } from '@/theme/ThemeProvider';
-import { radius, space } from '@/theme/tokens';
+import { useType } from '@/theme/type';
+import { MAX_WIDTH, radius, space } from '@/theme/tokens';
+import { useVoice } from './useVoice';
+import { ChatHistorySheet } from './ChatHistorySheet';
 
 type Msg = { id: string; role: 'user' | 'assistant'; text: string; citations?: Citation[]; followUps?: string[]; refused?: boolean; generatedBy?: 'rules' | 'llm'; error?: boolean; style?: ReplyStyle; viaVoice?: boolean };
 const fromServer = (m: ChatMessage): Msg => ({ id: m.id, role: m.role, text: m.text, citations: m.citations, followUps: m.followUps, refused: m.refused, style: m.style, viaVoice: m.viaVoice });
-const SUGG: Key[] = ['ask.tip', 'ask.s1', 'ask.s2', 'ask.s3', 'ask.s4', 'ask.s5'];
+// The first prompt is the one that matters most for this audience: checking a tip someone gave them.
+const STARTERS: Key[] = ['ask.tip', 'ask.s2', 'ask.s1', 'ask.s3'];
 const KEY = 'finsaathi.chat';              // old on-phone history, uploaded once then removed
 const CUR = 'finsaathi.chat.current';      // id of the conversation to resume
 
@@ -43,63 +40,103 @@ const speak = (text: string, style?: ReplyStyle) => {
 function Dot({ i }: { i: number }) {
   const { colors } = useTheme();
   const reduce = useReducedMotion();
-  const o = useSharedValue(0.4);
+  const o = useSharedValue(0.35);
   useEffect(() => { if (!reduce) o.value = withDelay(i * 160, withRepeat(withSequence(withTiming(1, { duration: 400 }), withTiming(0.3, { duration: 400 })), -1)); }, [o, i, reduce]);
-  const s = useAnimatedStyle(() => ({ opacity: o.value }));
-  return <Animated.View style={[{ width: 10, height: 10, borderRadius: 5, backgroundColor: colors.inkSoft }, s]} />;
+  const s = useAnimatedStyle(() => ({ opacity: o.value, transform: [{ translateY: -3 * o.value }] }));
+  return <Animated.View style={[{ width: 9, height: 9, borderRadius: 5, backgroundColor: colors.primary }, s]} />;
 }
 function Typing() {
   const t = useT();
+  const { colors } = useTheme();
   return (
-    <View accessibilityLiveRegion="polite" accessibilityLabel={t('ask.thinking')} style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: space.md }}>
-      <Dot i={0} /><Dot i={1} /><Dot i={2} /><Text v="label" tone="soft">{t('ask.thinking')}</Text>
+    <View accessibilityLiveRegion="polite" accessibilityLabel={t('ask.thinking')} style={{ alignSelf: 'flex-start', flexDirection: 'row', gap: 6, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, borderTopLeftRadius: 4, paddingHorizontal: space.lg, paddingVertical: space.md }}>
+      <Dot i={0} /><Dot i={1} /><Dot i={2} />
     </View>
   );
+}
+
+/** Live level meter shown while the microphone is recording. */
+function Meter({ color }: { color: string }) {
+  return <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, height: 28 }}>{[0.5, 0.9, 0.6, 1, 0.7, 0.9, 0.5].map((h, i) => <MeterBar key={i} i={i} h={h} color={color} />)}</View>;
+}
+function MeterBar({ i, h, color }: { i: number; h: number; color: string }) {
+  const s = useSharedValue(0.3);
+  useEffect(() => { s.value = withDelay(i * 90, withRepeat(withSequence(withTiming(h, { duration: 320, easing: Easing.inOut(Easing.quad) }), withTiming(0.2, { duration: 320 })), -1)); }, [s, i, h]);
+  const st = useAnimatedStyle(() => ({ transform: [{ scaleY: s.value }] }));
+  return <Animated.View style={[{ width: 4, height: 28, borderRadius: 2, backgroundColor: color }, st]} />;
 }
 
 function Bubble({ m, onFollow }: { m: Msg; onFollow: (q: string) => void }) {
   const { colors } = useTheme();
   const { lang } = useApp();
   const t = useT();
+  const [src, setSrc] = useState(false);
   if (m.role === 'user') {
     return (
-      <View style={{ alignSelf: 'flex-end', maxWidth: '90%', backgroundColor: colors.primary, borderRadius: radius.lg, borderBottomRightRadius: 4, padding: space.md }} accessible accessibilityLabel={`${t('ask.you')}: ${m.text}`}>
-        {m.viaVoice ? <Mic size={14} color={colors.onPrimary} style={{ marginBottom: 2 }} /> : null}
-        <Text v="body" tone="onPrimary">{m.text}</Text>
-      </View>
+      <Animated.View entering={FadeInDown.duration(220)} style={{ alignSelf: 'flex-end', maxWidth: '86%', backgroundColor: colors.primary, borderRadius: radius.lg, borderBottomRightRadius: 4, paddingHorizontal: space.lg, paddingVertical: space.md, gap: 2 }} accessible accessibilityLabel={`${t('ask.you')}: ${m.text}`}>
+        {m.viaVoice ? <Mic size={14} color={colors.onPrimary} /> : null}
+        <Text v="bodyLg" tone="onPrimary">{m.text}</Text>
+      </Animated.View>
     );
   }
   if (m.error) return <Banner tone="offline" title={m.text} />;
   return (
-    <View style={{ gap: space.sm, maxWidth: '100%' }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-        <Text v="label" weight="semibold" tone="soft">{t('ask.assistant')}</Text>
-        <Pressable onPress={() => speak(m.text, m.style)} accessibilityRole="button" accessibilityLabel={t('ask.speak')} hitSlop={8} style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}>
-          <Volume2 size={20} color={colors.inkSoft} />
-        </Pressable>
-      </View>
+    <Animated.View entering={FadeInDown.duration(260)} style={{ gap: space.sm, maxWidth: '100%' }}>
       {m.refused ? (
         <Banner tone="info" title={t('ask.refusedTitle')} body={m.text} />
       ) : (
-        <View style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, borderTopLeftRadius: 4, padding: space.lg }}>
-          <RichText text={m.text} v="body" />
+        <View style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, borderTopLeftRadius: 4, padding: space.lg, gap: space.sm }}>
+          <RichText text={m.text} v="bodyLg" />
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            {m.citations?.length ? (
+              <Pressable onPress={() => setSrc((v) => !v)} accessibilityRole="button" accessibilityLabel={t('ask.sources')} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 40 }}>
+                <Text v="small" tone="soft" weight="semibold">{t('ask.sources')} ({m.citations.length})</Text>
+                {src ? <ChevronUp size={16} color={colors.inkSoft} /> : <ChevronDown size={16} color={colors.inkSoft} />}
+              </Pressable>
+            ) : <View />}
+            <Pressable onPress={() => speak(m.text, m.style)} accessibilityRole="button" accessibilityLabel={t('ask.speak')} hitSlop={8} style={{ width: 44, height: 40, alignItems: 'flex-end', justifyContent: 'center' }}>
+              <Volume2 size={20} color={colors.primary} />
+            </Pressable>
+          </View>
+          {src ? (
+            <View style={{ gap: 4 }}>
+              {m.citations!.map((c, i) => <Text key={i} v="small" tone="soft">• {c.label}{c.asOf ? ` · ${formatDateTime(c.asOf, lang)}` : ''}</Text>)}
+            </View>
+          ) : null}
         </View>
       )}
-      {m.citations?.length ? (
-        <View style={{ gap: 6 }}>
-          <Text v="small" weight="semibold" tone="soft">{t('ask.sources')}</Text>
-          <Cluster gap={6}>
-            {m.citations.map((c, i) => (
-              <View key={i} accessible accessibilityLabel={`${c.label}${c.asOf ? ', ' + formatDateTime(c.asOf, lang) : ''}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.surfaceAlt, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 6 }}>
-                <FileText size={16} color={colors.inkSoft} strokeWidth={2} />
-                <Text v="small" tone="soft">{c.label}{c.asOf ? ` · ${formatDateTime(c.asOf, lang)}` : ''}</Text>
-              </View>
-            ))}
-          </Cluster>
-        </View>
-      ) : null}
-      {m.followUps?.length ? <Cluster>{m.followUps.map((f) => <Chip key={f} label={f} onPress={() => onFollow(f)} />)}</Cluster> : null}
-      {m.generatedBy ? <Text v="small" tone="soft">{m.generatedBy === 'llm' ? t('research.byAi') : t('research.byRules')}</Text> : null}
+      {m.followUps?.length ? <Cluster>{m.followUps.slice(0, 2).map((f) => <Chip key={f} label={f} onPress={() => onFollow(f)} />)}</Cluster> : null}
+    </Animated.View>
+  );
+}
+
+/** A big breathing mic on an empty chat: the one obvious thing to do. */
+function EmptyState({ onPick, onMic }: { onPick: (q: string) => void; onMic: () => void }) {
+  const { colors } = useTheme();
+  const t = useT();
+  const reduce = useReducedMotion();
+  const p = useSharedValue(0);
+  useEffect(() => { if (!reduce) p.value = withRepeat(withTiming(1, { duration: 1800, easing: Easing.out(Easing.quad) }), -1, false); }, [p, reduce]);
+  const ring = useAnimatedStyle(() => ({ opacity: 0.35 * (1 - p.value), transform: [{ scale: 1 + 0.9 * p.value }] }));
+  return (
+    <View style={{ alignItems: 'center', gap: space.lg, paddingTop: space.xl }}>
+      <Pressable onPress={onMic} accessibilityRole="button" accessibilityLabel={t('ask.mic')} style={{ width: 120, height: 120, alignItems: 'center', justifyContent: 'center' }}>
+        <Animated.View pointerEvents="none" style={[{ position: 'absolute', width: 96, height: 96, borderRadius: 48, backgroundColor: colors.primary }, ring]} />
+        <View style={{ width: 88, height: 88, borderRadius: 44, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' }}><Mic size={38} color={colors.onPrimary} /></View>
+      </Pressable>
+      <View style={{ alignItems: 'center', gap: 4 }}>
+        <Text v="h2" center>{t('ask.hello')}</Text>
+        <Text v="body" tone="soft" center>{t('ask.helloSub')}</Text>
+      </View>
+      <View style={{ alignSelf: 'stretch', gap: space.sm }}>
+        {STARTERS.map((k, i) => (
+          <Pressable key={k} onPress={() => onPick(t(k))} accessibilityRole="button" accessibilityLabel={t(k)}
+            style={{ minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.lg, borderRadius: radius.md, borderWidth: 1.5, borderColor: i === 0 ? colors.caution : colors.line, backgroundColor: i === 0 ? colors.cautionBg : colors.surface }}>
+            {i === 0 ? <ShieldCheck size={22} color={colors.caution} /> : null}
+            <Text v="body" weight={i === 0 ? 'semibold' : 'medium'} style={{ flex: 1 }}>{t(k)}</Text>
+          </Pressable>
+        ))}
+      </View>
     </View>
   );
 }
@@ -112,25 +149,23 @@ export function AskScreen() {
   const [convId, setConvId] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
-  const [disclaimer, setDisclaimer] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const msgsRef = useRef<Msg[]>([]);
   msgsRef.current = msgs;
   const voice = useVoice();
   const { q: prefill } = useLocalSearchParams<{ q?: string }>();
-  // "Ask FinSaathi about this" on a news story opens a fresh chat with the headline typed in, ready to send.
-  useEffect(() => { if (prefill) { setInput(`${prefill}`); } }, [prefill]);
+  // "Ask FinSaathi about this" on a news story, or the tip card on Home, opens the chat with the question typed in, ready to send.
+  useEffect(() => { if (prefill) setInput(`${prefill}`); }, [prefill]);
 
   const remember = (id: string | null) => { setConvId(id); if (id) setJSON(CUR, id); else removeKey(CUR); };
-
   const open = async (id: string): Promise<boolean> => {
     try {
       const c = await api.get<Conversation>(`/assistant/conversations/${id}`);
-      Speech.stop(); setMsgs(c.messages.map(fromServer)); setDisclaimer(null); remember(c.id); return true;
+      Speech.stop(); setMsgs(c.messages.map(fromServer)); remember(c.id); return true;
     } catch { return false; }
   };
-  const newChat = () => { Speech.stop(); setMsgs([]); setDisclaimer(null); setNotice(null); remember(null); };
+  const newChat = () => { Speech.stop(); setMsgs([]); setNotice(null); remember(null); };
 
   // On entry: resume the last conversation. Chats that only exist on this phone from before are uploaded once.
   useEffect(() => {
@@ -156,12 +191,9 @@ export function AskScreen() {
     const text = err.isNetwork ? t('ask.errOffline') : err.code === 'voice_unavailable' || err.code === 'no_speech' ? err.message : err.message || t('err.generic');
     setMsgs([...userTurn, { id: `e${Date.now()}`, role: 'assistant', text, error: true }]);
   };
-
   const accept = (r: ChatResponse, base: Msg[], viaVoice: boolean) => {
-    setDisclaimer(r.disclaimer);
     if (r.conversationId && r.conversationId !== convId) remember(r.conversationId);
-    const reply: Msg = { id: `a${Date.now()}`, role: 'assistant', text: r.answer, citations: r.citations, followUps: r.followUps, refused: r.refused, generatedBy: r.generatedBy, style: r.style };
-    setMsgs([...base, reply]);
+    setMsgs([...base, { id: `a${Date.now()}`, role: 'assistant', text: r.answer, citations: r.citations, followUps: r.followUps, refused: r.refused, generatedBy: r.generatedBy, style: r.style }]);
     if (viaVoice && !r.refused) speak(r.answer, r.style); // he asked by voice, so he gets the answer by voice too
   };
 
@@ -184,74 +216,80 @@ export function AskScreen() {
     const base = msgsRef.current;
     try {
       const r = await api.post<ChatResponse>('/assistant/voice', { audio: clip.base64, mimeType: clip.mimeType, conversationId: convId ?? undefined, lang }, { timeoutMs: 90000 });
-      const heard: Msg = { id: `u${Date.now()}`, role: 'user', text: r.transcript ?? '', viaVoice: true };
-      accept(r, [...base, heard], true);
+      accept(r, [...base, { id: `u${Date.now()}`, role: 'user', text: r.transcript ?? '', viaVoice: true }], true);
     } catch (e) {
       const err = e as ApiError;
       setNotice(err.isNetwork ? t('ask.errOffline') : err.code === 'no_speech' || err.code === 'voice_unavailable' ? err.message : t('ask.voiceFail'));
     } finally { setBusy(false); }
   };
   voice.onLimit(() => { finishVoice(); });
-  const toggleMic = () => { if (voice.state === 'recording') finishVoice(); else if (voice.state === 'idle' && !busy) { Speech.stop(); voice.start(); } };
+  const startMic = () => { if (voice.state === 'idle' && !busy) { Speech.stop(); voice.start(); } };
 
   const scroller = useRef<{ scrollToEnd: (o?: { animated?: boolean }) => void } | null>(null);
-  const goEnd = () => scroller.current?.scrollToEnd({ animated: true });
   const { gutter } = useLayout();
   const ty = useType();
   const { online, apiUp } = useConnectivity();
   const recording = voice.state === 'recording';
+  const offline = !online || !apiUp;
+  const hasText = !!input.trim();
   const micMsg = voice.error === 'denied' ? t('ask.micDenied') : voice.error === 'tooShort' ? t('ask.micShort') : voice.error === 'failed' ? t('ask.voiceFail') : null;
-  const mm = String(Math.floor(voice.seconds / 60)).padStart(1, '0') + ':' + String(voice.seconds % 60).padStart(2, '0');
+  const mm = `${Math.floor(voice.seconds / 60)}:${String(voice.seconds % 60).padStart(2, '0')}`;
+  const action = recording ? 'stop' : hasText ? 'send' : 'mic';
+  const onAction = () => (action === 'stop' ? finishVoice() : action === 'send' ? send(input) : startMic());
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top', 'left', 'right']}>
-      <View style={{ flex: 1, alignItems: 'center' }}>
-        <View style={{ flex: 1, width: '100%', maxWidth: MAX_WIDTH, paddingHorizontal: gutter }}>
+      <KeyboardAvoidingView style={{ flex: 1, alignItems: 'center' }} behavior="padding" keyboardVerticalOffset={0}>
+        <View style={{ flex: 1, width: '100%', maxWidth: 720, paddingHorizontal: gutter }}>
           <TopBar />
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md, marginTop: space.md, flexWrap: 'wrap' }}>
-            <Text v="h1">{t('tab.ask')}</Text>
-            <View style={{ flexDirection: 'row', gap: space.xs }}>
-              <Button label={t('ask.history')} variant="ghost" icon={History} fullWidth={false} compact onPress={() => setHistoryOpen(true)} />
-              {msgs.length ? <Button label={t('ask.newChat')} variant="ghost" icon={SquarePen} fullWidth={false} compact onPress={newChat} /> : null}
+          {msgs.length ? (
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: space.xs, paddingTop: space.xs }}>
+              <Pressable onPress={() => setHistoryOpen(true)} accessibilityRole="button" accessibilityLabel={t('ask.history')} style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space.sm }}>
+                <History size={20} color={colors.primary} /><Text v="label" tone="primary" weight="semibold">{t('ask.history')}</Text>
+              </Pressable>
+              <Pressable onPress={newChat} accessibilityRole="button" accessibilityLabel={t('ask.newChat')} style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space.sm }}>
+                <SquarePen size={20} color={colors.primary} /><Text v="label" tone="primary" weight="semibold">{t('ask.newChat')}</Text>
+              </Pressable>
             </View>
-          </View>
-          <ScrollView ref={scroller as never} style={{ flex: 1 }} contentContainerStyle={{ paddingVertical: space.lg, gap: space.xl }} keyboardShouldPersistTaps="handled" onContentSizeChange={goEnd}>
-            <Text v="label" tone="soft">{disclaimer ?? t('ask.note')}</Text>
-            {!msgs.length ? (
-              <View style={{ gap: space.md }}>
-                <Text v="h3">{t('ask.try')}</Text>
-                <Text v="body" tone="soft">{t('ask.voiceHint')}</Text>
-                <Cluster>{SUGG.map((k) => <Chip key={k} label={t(k)} onPress={() => send(t(k))} />)}</Cluster>
-              </View>
-            ) : null}
+          ) : (
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingTop: space.xs }}>
+              <Pressable onPress={() => setHistoryOpen(true)} accessibilityRole="button" accessibilityLabel={t('ask.history')} style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space.sm }}>
+                <History size={20} color={colors.primary} /><Text v="label" tone="primary" weight="semibold">{t('ask.history')}</Text>
+              </Pressable>
+            </View>
+          )}
+          <ScrollView ref={scroller as never} style={{ flex: 1 }} contentContainerStyle={{ paddingVertical: space.md, gap: space.lg, flexGrow: 1 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"
+            onContentSizeChange={() => scroller.current?.scrollToEnd({ animated: true })}>
+            {!msgs.length && !busy ? <EmptyState onPick={send} onMic={startMic} /> : null}
             {msgs.map((m) => <Bubble key={m.id} m={m} onFollow={send} />)}
             {busy ? <Typing /> : null}
           </ScrollView>
           {notice || micMsg ? <View style={{ paddingBottom: space.sm }}><Banner tone="caution" title={(notice ?? micMsg) as string} /></View> : null}
-          {recording ? (
-            <View accessibilityLiveRegion="polite" style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingBottom: space.sm }}>
-              <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: colors.loss }} />
-              <Text v="label" weight="semibold">{t('ask.listening')} {mm}</Text>
+          <View style={{ paddingTop: space.sm, paddingBottom: space.sm, gap: 6 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: space.sm, backgroundColor: colors.surface, borderWidth: 1.5, borderColor: recording ? colors.loss : colors.line, borderRadius: 32, paddingLeft: space.lg, paddingRight: 6, paddingVertical: 6, minHeight: 64 }}>
+              {recording ? (
+                <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 52 }}>
+                  <Pressable onPress={() => { voice.cancel(); }} accessibilityRole="button" accessibilityLabel={t('common.cancel')} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}><Trash2 size={22} color={colors.inkSoft} /></Pressable>
+                  <Meter color={colors.loss} />
+                  <Text v="body" weight="semibold" num>{mm}</Text>
+                  <Text v="small" tone="soft" style={{ flex: 1 }} numberOfLines={1}>{t('ask.listening')}</Text>
+                </View>
+              ) : (
+                <TextInput
+                  value={input} onChangeText={setInput} placeholder={t('ask.placeholder')} placeholderTextColor={colors.inkSoft} accessibilityLabel={t('ask.label')} multiline maxLength={1000}
+                  style={[{ flex: 1, maxHeight: 120, minHeight: 52, paddingTop: 12, paddingBottom: 12, color: colors.ink, fontFamily: ty.family.regular, fontSize: ty.size('bodyLg') }, { outlineStyle: 'none' } as never]}
+                />
+              )}
+              <Pressable onPress={onAction} disabled={busy || offline || voice.state === 'processing'} accessibilityRole="button"
+                accessibilityLabel={action === 'stop' ? t('ask.micStop') : action === 'send' ? t('ask.send') : t('ask.mic')}
+                style={{ width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: action === 'stop' ? colors.loss : colors.primary, opacity: busy || offline ? 0.45 : 1 }}>
+                {action === 'stop' ? <Square size={20} color={colors.onPrimary} fill={colors.onPrimary} /> : action === 'send' ? <ArrowUp size={26} color={colors.onPrimary} strokeWidth={2.5} /> : <Mic size={26} color={colors.onPrimary} />}
+              </Pressable>
             </View>
-          ) : null}
-          <View style={{ paddingTop: space.sm, paddingBottom: space.md, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: colors.bg, flexDirection: 'row', gap: space.sm, alignItems: 'center' }}>
-            <Pressable
-              onPress={toggleMic} disabled={busy || voice.state === 'processing' || !online || !apiUp} accessibilityRole="button" accessibilityLabel={recording ? t('ask.micStop') : t('ask.mic')} accessibilityState={{ disabled: busy }}
-              style={{ width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', backgroundColor: recording ? colors.loss : colors.primary, opacity: busy || !online || !apiUp ? 0.5 : 1 }}>
-              {recording ? <Square size={24} color={colors.onPrimary} fill={colors.onPrimary} /> : <Mic size={28} color={colors.onPrimary} />}
-            </Pressable>
-            <TextInput
-              value={input} onChangeText={setInput} placeholder={recording ? t('ask.listening') : t('ask.placeholder')} placeholderTextColor={colors.inkSoft} accessibilityLabel={t('ask.label')}
-              onSubmitEditing={() => send(input)} returnKeyType="send" editable={!recording}
-              style={[{ flex: 1, minHeight: 56, borderWidth: 1.5, borderColor: colors.line, borderRadius: radius.md, backgroundColor: colors.surface, color: colors.ink, fontFamily: ty.family.regular, fontSize: ty.size('bodyLg'), paddingHorizontal: space.md }, { outlineStyle: 'none' } as never]}
-            />
-            <Pressable onPress={() => send(input)} disabled={!input.trim() || busy || !online || !apiUp} accessibilityRole="button" accessibilityLabel={t('ask.send')}
-              style={{ width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceAlt, borderWidth: 1.5, borderColor: colors.line, opacity: !input.trim() || busy ? 0.5 : 1 }}>
-              <Send size={24} color={colors.primary} />
-            </Pressable>
+            <Text v="small" tone="soft" center>{t('gate.legal')}</Text>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
       <ChatHistorySheet visible={historyOpen} onClose={() => setHistoryOpen(false)} currentId={convId} onOpen={open} onNew={newChat} onDeleted={(id) => { if (id === convId) newChat(); }} />
     </SafeAreaView>
   );

@@ -64,15 +64,6 @@ function PlanResult({ plan }: { plan: Plan }) {
       </View>
       {plan.sip ? <Banner tone="info" title={t('plan.sipTitle', { amount: formatINR(plan.sip.monthly) })} body={plan.sip.note} /> : null}
       <View style={{ gap: space.sm }}>
-        <Text v="h3">{t('plan.steps')}</Text>
-        {plan.stepsToStart.map((s, i) => (
-          <View key={i} style={{ flexDirection: 'row', gap: space.md }}>
-            <Text v="body" weight="bold" tone="primary" num style={{ minWidth: 24 }}>{i + 1}.</Text>
-            <View style={{ flex: 1 }}><RichText text={s} v="body" /></View>
-          </View>
-        ))}
-      </View>
-      <View style={{ gap: space.sm }}>
         <Text v="h3">{t('plan.emergency')}</Text>
         <RichText text={plan.emergencyFundNote} v="body" />
       </View>

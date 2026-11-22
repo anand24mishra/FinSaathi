@@ -17,8 +17,8 @@ function CtlButton({ children, onPress, label, selected, disabled, wide }: { chi
     <Pressable onPress={onPress} disabled={disabled} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: !!disabled, selected }}
       {...({ title: label } as object)}
       style={({ pressed, hovered }: { pressed: boolean; hovered?: boolean }) => ({
-        minHeight: 46, minWidth: wide ? 72 : 46, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6,
-        borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.line, backgroundColor: pressed || hovered ? colors.surfaceAlt : colors.surface, opacity: disabled ? 0.45 : 1,
+        minHeight: 44, minWidth: wide ? 64 : 44, paddingHorizontal: wide ? 14 : 8, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 4,
+        borderRadius: radius.pill, borderWidth: wide ? 1.5 : 0, borderColor: colors.line, backgroundColor: pressed || hovered ? colors.surfaceAlt : wide ? colors.surface : 'transparent', opacity: disabled ? 0.45 : 1,
       })}>
       {children}
     </Pressable>
@@ -39,7 +39,7 @@ export function TopBar() {
         <Text v="h3" tone="primary" weight="bold">FinSaathi</Text>
         <Text v="small" tone="soft">फ़िनसाथी</Text>
       </Pressable>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
         <CtlButton wide onPress={() => setLang(lang === 'en' ? 'hi' : 'en')} label={lang === 'en' ? t('top.switchToHindi') : t('top.switchToEnglish')}>
           <Text v="label" weight="semibold" tone="primary">{lang === 'en' ? 'हिन्दी' : 'English'}</Text>
         </CtlButton>

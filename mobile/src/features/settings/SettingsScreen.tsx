@@ -90,17 +90,7 @@ export function SettingsScreen() {
           <View style={{ flex: 1 }}>{display}</View><View style={{ flex: 1 }}>{profile}</View>
         </View>
       ) : (<>{display}{profile}</>)}
-      <Section title={t('about.title')}>
-        <Panel style={{ gap: space.md }}>
-          <Text v="body" weight="semibold">{t('about.is')}</Text>
-          <Text v="body">{t('about.isBody')}</Text>
-          <Text v="body" weight="semibold">{t('about.isnt')}</Text>
-          <Text v="body">{t('about.isntBody')}</Text>
-          <Text v="label" tone="soft">{t('about.local')}</Text>
-        </Panel>
-        <View style={{ marginTop: space.md }}><Text v="label" tone="soft">{DISCLAIMER[lang]}</Text></View>
-        <Row title={t('about.server')} subtitle={API_BASE} last />
-      </Section>
+      <View style={{ marginTop: space.xl }}><Text v="small" tone="soft">{DISCLAIMER[lang]}</Text></View>
       <View style={{ marginTop: space.xl, gap: space.md }}>
         <Button label={t('settings.logout')} icon={LogOut} variant="danger" onPress={() => { signOut(); router.replace('/welcome'); }} />
       </View>

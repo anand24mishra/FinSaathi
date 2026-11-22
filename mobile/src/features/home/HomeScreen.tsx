@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { Linking, Pressable, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Landmark, ShieldCheck } from 'lucide-react-native';
 import { Screen } from '@/components/Screen';
@@ -26,24 +26,22 @@ import { LiveBadge } from '@/live/LiveBadge';
 import { radius, space } from '@/theme/tokens';
 
 type TabKey = 'invest' | 'trade' | 'rising' | 'avoid' | 'ipos';
-const TABS: TabKey[] = ['invest', 'trade', 'rising', 'avoid', 'ipos'];
+const TABS: TabKey[] = ['invest', 'trade', 'avoid'];
 const pick = (f: CallsFeed, k: Exclude<TabKey, 'ipos'>): StockCall[] => ({ invest: f.invest, trade: f.trade, rising: f.risingStars, avoid: f.avoid }[k]);
 
 function Pulse({ o }: { o: MarketOverview }) {
   const { colors } = useTheme();
-  const items = [...o.india, ...(o.fx ? [o.fx] : []), ...o.commodities.slice(0, 2)];
+  const items = [...o.india, ...(o.fx ? [o.fx] : []), ...o.commodities.slice(0, 1)];
   return (
-    <Panel style={{ borderRadius: radius.lg, paddingVertical: space.lg }}>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.xl, rowGap: space.lg }}>
-        {items.map((q) => (
-          <View key={q.symbol} style={{ minWidth: 118, gap: 2 }}>
-            <Text v="label" tone="soft">{q.name}</Text>
-            <Text v="money" num style={{ fontSize: 20, lineHeight: 26, color: colors.ink }}>{q.price.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</Text>
-            <Change pct={q.changePct} />
-          </View>
-        ))}
-      </View>
-    </Panel>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm, paddingRight: space.lg }} style={{ marginHorizontal: -space.lg, paddingHorizontal: space.lg }}>
+      {items.map((q) => (
+        <View key={q.symbol} style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, paddingHorizontal: space.md, paddingVertical: space.sm, minWidth: 124, gap: 1 }}>
+          <Text v="small" tone="soft" weight="semibold" numberOfLines={1}>{q.name}</Text>
+          <Text v="money" num style={{ fontSize: 18, lineHeight: 24, color: colors.ink }}>{q.price.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</Text>
+          <Change pct={q.changePct} />
+        </View>
+      ))}
+    </ScrollView>
   );
 }
 
@@ -51,20 +49,18 @@ function Calls() {
   const { lang } = useApp(); const t = useT(); const router = useRouter();
   const [tab, setTab] = useState<TabKey>('invest');
   const q = useApi<CallsFeed>(withLang('/calls', lang), { fresh: 300000 });
-  const shown = q.data && tab !== 'ipos' ? pick(q.data, tab).slice(0, 10) : [];
+  const shown = q.data && tab !== 'ipos' ? pick(q.data, tab).slice(0, 5) : [];
   const live = useLive(shown.map((c) => c.symbol));
   return (
     <View style={{ gap: space.md }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: space.sm }}><Text v="h2">{t('home.callsTitle')}</Text><LiveBadge status={live.status} quote={shown[0] ? live.quotes[shown[0].symbol] : null} /></View>
       <Cluster>{TABS.map((k) => <Chip key={k} label={t(`home.tab.${k}` as Key)} selected={tab === k} onPress={() => setTab(k)} />)}</Cluster>
-      <Text v="small" tone="soft">{t(`home.tabHelp.${tab}` as Key)}</Text>
       {tab === 'ipos' ? <IposTab /> : (
         <Panel pad={false} style={{ paddingHorizontal: space.lg, borderRadius: radius.lg }}>
           <Async q={q} skeleton={<View style={{ paddingVertical: space.lg }}><SkeletonList rows={5} /></View>}
             isEmpty={(d) => !pick(d, tab).length} empty={<EmptyState title={t('home.callsEmpty')} />}>
             {(d) => (<>
-              {pick(d, tab).slice(0, 10).map((c, i, arr) => <CallRow key={c.symbol + c.mode} call={c} live={live.quotes[c.symbol] ? { price: live.quotes[c.symbol].price, changePct: live.quotes[c.symbol].changePct } : undefined} last={i === arr.length - 1} onPress={() => router.push({ pathname: '/stock/[symbol]', params: { symbol: c.symbol, mode: c.mode } })} />)}
-              {d.notes.length ? <Text v="small" tone="soft" style={{ paddingVertical: space.md }}>{d.notes.join(' ')}</Text> : null}
+              {pick(d, tab).slice(0, 5).map((c, i, arr) => <CallRow key={c.symbol + c.mode} call={c} live={live.quotes[c.symbol] ? { price: live.quotes[c.symbol].price, changePct: live.quotes[c.symbol].changePct } : undefined} last={i === arr.length - 1} onPress={() => router.push({ pathname: '/stock/[symbol]', params: { symbol: c.symbol, mode: c.mode } })} />)}
             </>)}
           </Async>
         </Panel>
@@ -76,47 +72,12 @@ function Calls() {
 function Note({ o }: { o: ReturnType<typeof useApi<MarketOverview>> }) {
   const { lang } = useApp(); const t = useT();
   const note = useApi<AnalystNote>(withLang('/agent/note', lang), { fresh: 300000 });
-  const n = note.data;
+  const headline = note.data?.headline ?? o.data?.mood.headline;
+  if (!headline) return null;
   return (
-    <Panel style={{ gap: space.sm, borderRadius: radius.lg, padding: space.xl }}>
+    <Panel style={{ gap: 4, borderRadius: radius.lg, padding: space.lg }}>
       <Text v="label" tone="primary" weight="bold">{t('home.note').toUpperCase()}</Text>
-      {n ? (<>
-        <Text v="h3">{n.headline}</Text>
-        <Text v="body" tone="soft">{n.body}</Text>
-        {n.watch.slice(0, 3).map((w) => <Text key={w} v="small" tone="soft">• {w}</Text>)}
-      </>) : o.data ? (<>
-        <Text v="h3">{o.data.mood.headline}</Text>
-        {o.data.mood.bullets.slice(0, 3).map((b) => <Text key={b} v="small" tone="soft">• {b}</Text>)}
-      </>) : <SkeletonBlock lines={3} />}
-      <Text v="small" tone="soft" style={{ fontStyle: 'italic' }}>{t('home.researchOnly')}</Text>
-    </Panel>
-  );
-}
-
-function Social() {
-  const { lang } = useApp(); const t = useT(); const { colors } = useTheme(); const router = useRouter();
-  const q = useApi<NewsHub>(withLang('/news/hub', lang), { fresh: 120000 });
-  const status = (s: 'live' | 'unavailable' | 'not_configured') => t(s === 'live' ? 'home.sourceLive' : s === 'not_configured' ? 'home.sourceOff' : 'home.sourceDown');
-  return (
-    <Panel style={{ gap: space.md, borderRadius: radius.lg, padding: space.xl }}>
-      <Text v="label" tone="primary" weight="bold">{t('home.social').toUpperCase()}</Text>
-      <Async q={q} skeleton={<SkeletonList rows={4} />} isEmpty={(d) => !d.news.length && !d.social.length} empty={<EmptyState title={t('news.empty')} />}>
-        {(h) => (<>
-          {h.buzz.length ? (<>
-            <Text v="small" tone="soft">{t('home.buzz')}</Text>
-            <Cluster>{h.buzz.slice(0, 6).map((b) => (
-              <View key={b.symbol} style={{ backgroundColor: b.sentimentScore >= 15 ? colors.gainBg : b.sentimentScore <= -15 ? colors.lossBg : colors.surfaceAlt, borderRadius: radius.pill, paddingHorizontal: space.md, paddingVertical: 5 }}>
-                <Text v="small" weight="semibold" tone={b.sentimentScore >= 15 ? 'gain' : b.sentimentScore <= -15 ? 'loss' : 'ink'}>{b.name} · {t('home.mentions', { n: b.mentions })}</Text>
-              </View>))}</Cluster>
-          </>) : null}
-          {h.news.slice(0, 4).map((n, i, arr) => (
-            <Pressable key={n.id} onPress={() => router.navigate('/news')} accessibilityRole="button" accessibilityLabel={n.title} style={{ gap: 4, paddingBottom: space.md, borderBottomWidth: i === arr.length - 1 ? 0 : 1, borderBottomColor: colors.line }}>
-              <Text v="body" weight="semibold">{n.title}</Text>
-              <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center', flexWrap: 'wrap' }}><SentimentTag s={n.sentiment} /><Text v="small" tone="soft">{n.source} · {timeAgo(n.publishedAt, lang)}</Text></View>
-            </Pressable>))}
-          <Button label={t('home.seeNews')} variant="secondary" onPress={() => router.navigate('/news')} />
-        </>)}
-      </Async>
+      <Text v="bodyLg" weight="semibold">{headline}</Text>
     </Panel>
   );
 }
@@ -136,30 +97,23 @@ export function HomeScreen() {
           <Text v="bodyLg" tone="soft">{formatDay(new Date(), lang)}</Text>
         </View>
       </Reveal>
-      <View style={{ marginTop: space.xl, gap: space.xl }}>
-        <Async q={overview} skeleton={<SkeletonBlock lines={3} />}>{(o) => <Pulse o={o} />}</Async>
+      <View style={{ marginTop: space.lg, gap: space.lg }}>
+        <Async q={overview} skeleton={<SkeletonBlock lines={2} />}>{(o) => <Pulse o={o} />}</Async>
         <Pressable onPress={() => router.navigate({ pathname: '/ask', params: { q: t('ask.tip') } })} accessibilityRole="button" accessibilityLabel={t('home.tipCard')} accessibilityHint={t('home.tipBody')}>
-          <Panel style={{ gap: 4, borderRadius: radius.lg, padding: space.xl, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.primarySoft, borderColor: colors.primarySoft }}>
-            <View style={{ flex: 1, gap: 4 }}>
-              <Text v="h3">{t('home.tipCard')}</Text>
-              <Text v="body">{t('home.tipBody')}</Text>
+          <Panel style={{ borderRadius: radius.lg, padding: space.lg, flexDirection: 'row', alignItems: 'center', gap: space.md, backgroundColor: colors.cautionBg, borderColor: colors.cautionBg }}>
+            <ShieldCheck size={30} color={colors.caution} />
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text v="bodyLg" weight="bold">{t('home.tipCard')}</Text>
+              <Text v="small" tone="soft">{t('home.tipBody')}</Text>
             </View>
-            <ShieldCheck size={30} color={colors.primary} />
           </Panel>
         </Pressable>
-        <Pressable onPress={() => router.navigate('/plan')} accessibilityRole="button" accessibilityLabel={t('home.planCard')} accessibilityHint={t('home.planBody')}>
-          <Panel style={{ gap: 4, borderRadius: radius.lg, padding: space.xl, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <View style={{ flex: 1, gap: 4 }}>
-              <Text v="h3">{t('home.planCard')}</Text>
-              <Text v="body" tone="soft">{t('home.planBody')}</Text>
-            </View>
-            <Landmark size={28} color={colors.primary} />
-          </Panel>
+        <Note o={overview} />
+        <Calls />
+        <Pressable onPress={() => router.navigate('/plan')} accessibilityRole="button" accessibilityLabel={t('home.planCard')} style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 56, paddingHorizontal: space.sm }}>
+          <Landmark size={22} color={colors.primary} />
+          <Text v="body" weight="semibold" tone="primary" style={{ flex: 1 }}>{t('home.planCard')}</Text>
         </Pressable>
-        <View style={{ flexDirection: isDesktop ? 'row' : 'column', gap: space.xl, alignItems: 'flex-start' }}>
-          <View style={{ flex: isDesktop ? 3 : undefined, width: isDesktop ? undefined : '100%' }}><Calls /></View>
-          <View style={{ flex: isDesktop ? 2 : undefined, width: isDesktop ? undefined : '100%', gap: space.xl }}><Note o={overview} /><Social /></View>
-        </View>
       </View>
     </Screen>
   );

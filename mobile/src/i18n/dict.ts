@@ -411,7 +411,9 @@ const rest = {
   'ask.errOffline': ['I could not reach the server. Your question is kept. Please try again in a moment.', 'सर्वर तक नहीं पहुँच सका। आपका सवाल सुरक्षित है। कृपया थोड़ी देर में फिर कोशिश करें।'],
   'ask.tip': ['Someone told me to buy a share. How do I check it first?', 'किसी ने मुझे एक शेयर लेने को कहा है। पहले इसे कैसे जाँचूँ?'],
   'home.tipCard': ['Got a share tip? Check it first', 'शेयर की कोई सलाह मिली? पहले जाँच लें'],
-  'home.tipBody': ['From your boss, a friend or a broker: see the price, our view and 5 questions to ask before you buy.', 'बॉस, दोस्त या ब्रोकर से मिली सलाह: भाव, हमारी राय और ख़रीदने से पहले पूछने के 5 सवाल देखें।'],
+  'home.tipBody': ['Boss, friend or broker said buy? See 5 questions first.', 'बॉस, दोस्त या ब्रोकर ने कहा "ले लो"? पहले 5 सवाल देखें।'],
+  'ask.hello': ['Ask me anything', 'कुछ भी पूछिए'],
+  'ask.helloSub': ['Tap the mic and speak, or type below.', 'माइक दबाकर बोलिए, या नीचे लिखिए।'],
   'ask.mic': ['Ask by voice', 'बोलकर पूछें'],
   'ask.micStop': ['Stop and send', 'रोकें और भेजें'],
   'ask.listening': ['Listening… tap the square when done', 'सुन रहा हूँ… पूरा होने पर चौकोर बटन दबाएँ'],
@@ -486,6 +488,7 @@ const rest = {
 const v2 = {
   'gate.tag': ['Your daily market companion', 'आपका रोज़ का बाज़ार साथी'],
   'gate.sub': ['Sign in to ask questions by voice or text, and keep your chats, portfolio and alerts safe on every phone.', 'आवाज़ या लिखकर सवाल पूछने, और अपनी बातचीत, पोर्टफोलियो व सूचनाएँ हर फ़ोन पर सुरक्षित रखने के लिए साइन इन करें।'],
+  'gate.legal': ['Research and education, not investment advice.', 'रिसर्च और शिक्षा के लिए, निवेश की सलाह नहीं।'],
   'gate.guestNote': ['Please create an account. Your earlier portfolio and chats will be kept.', 'कृपया खाता बनाएँ। आपका पुराना पोर्टफोलियो और बातचीत सुरक्षित रहेंगे।'],
   'land.signIn': ['Sign in', 'साइन इन'],
   'land.kicker': ['Your daily market analyst', 'आपका रोज़ का बाज़ार विश्लेषक'],

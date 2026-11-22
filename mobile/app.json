@@ -3,7 +3,7 @@
     "name": "FinSaathi · फ़िनसाथी",
     "slug": "finsaathi",
     "scheme": "finsaathi",
-    "version": "2.0.0",
+    "version": "2.1.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -16,7 +16,7 @@
         "foregroundImage": "./assets/android-icon-foreground.png"
       },
       "package": "com.finsaathi.app",
-      "versionCode": 2
+      "versionCode": 4
     },
     "web": {
       "favicon": "./assets/favicon.png",
