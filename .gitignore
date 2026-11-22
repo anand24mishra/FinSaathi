@@ -34,3 +34,6 @@ yarn-error.log*
 Thumbs.db
 /android/
 /ios/
+
+# Local study notes (not published)
+docs/
