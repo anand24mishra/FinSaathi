@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import type { Alert, Lang, PortfolioView } from '../../../shared/contract';
 import { config } from '../config';
-import { stmt } from '../db';
 import { getDailyIdeas, getIpoFeed, getNews, getQuotes } from '../market/service';
 import { guarded } from './health';
 import { getPortfolioView, computeHealth, type HealthHolding } from './portfolio';
 import { sendTelegramAlerts } from './telegramBot';
 import { getProfile, getPushToken, listRecentlyActiveUserIds } from './users';
+import { alerts as alertsCol, isDuplicateKey } from '../store';
 
 type Bi = { en: string; hi: string };
 export interface AlertCandidate { dedupeKey: string; kind: Alert['kind']; severity: Alert['severity']; title: Bi; body: Bi }
@@ -119,35 +119,37 @@ export function ideaAlert(items: { symbol: string; name: string; score: number }
 }
 
 // ---------- persistence ----------
-interface AlertRow { id: string; kind: Alert['kind']; severity: Alert['severity']; title: string; body: string; created_at: string; read: number }
-const parseBi = (s: string): Bi => { try { return JSON.parse(s); } catch { return { en: s, hi: s }; } };
+const parseBi = (v: unknown): Bi => {
+  if (v && typeof v === 'object') return v as Bi;
+  try { return JSON.parse(String(v)); } catch { return { en: String(v), hi: String(v) }; }
+};
 
 /** Insert candidates, ignoring ones already stored for this user (dedupe). Returns the newly created. */
-export function saveAlerts(userId: string, cands: AlertCandidate[]): AlertCandidate[] {
+export async function saveAlerts(userId: string, cands: AlertCandidate[]): Promise<AlertCandidate[]> {
   const created: AlertCandidate[] = [];
-  const ins = stmt('INSERT OR IGNORE INTO alerts(id,user_id,dedupe_key,kind,severity,title,body,created_at) VALUES (?,?,?,?,?,?,?,?)');
   for (const c of cands) {
-    const r = ins.run(randomUUID(), userId, c.dedupeKey, c.kind, c.severity, JSON.stringify(c.title), JSON.stringify(c.body), new Date().toISOString());
-    if (Number(r.changes) > 0) created.push(c);
+    try {
+      await alertsCol().insertOne({ _id: randomUUID(), user_id: userId, dedupe_key: c.dedupeKey, kind: c.kind, severity: c.severity, title: c.title, body: c.body, created_at: new Date().toISOString(), read: false, pushed: false });
+      created.push(c);
+    } catch (e) { if (!isDuplicateKey(e)) throw e; }   // already stored for this user: skip
   }
   return created;
 }
 
-export function listAlerts(userId: string, lang: Lang): Alert[] {
-  const rows = stmt('SELECT id,kind,severity,title,body,created_at,read FROM alerts WHERE user_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 60').all(userId) as unknown as AlertRow[];
-  return rows.map((r) => ({ id: r.id, kind: r.kind, severity: r.severity, title: parseBi(r.title)[lang], body: parseBi(r.body)[lang], createdAt: r.created_at, read: !!r.read }));
+export async function listAlerts(userId: string, lang: Lang): Promise<Alert[]> {
+  const rows = await alertsCol().find({ user_id: userId }).sort({ created_at: -1, _id: -1 }).limit(60).toArray();
+  return rows.map((r) => ({ id: r._id, kind: r.kind as Alert['kind'], severity: r.severity as Alert['severity'], title: parseBi(r.title)[lang], body: parseBi(r.body)[lang], createdAt: r.created_at, read: !!r.read }));
 }
 
-export const unreadCount = (userId: string): number =>
-  Number((stmt('SELECT COUNT(*) AS n FROM alerts WHERE user_id = ? AND read = 0').get(userId) as { n: number }).n);
+export const unreadCount = (userId: string): Promise<number> => alertsCol().countDocuments({ user_id: userId, read: false });
 
-export const markAlertRead = (userId: string, id: string): boolean =>
-  Number(stmt('UPDATE alerts SET read = 1 WHERE id = ? AND user_id = ?').run(id, userId).changes) > 0;
+export const markAlertRead = async (userId: string, id: string): Promise<boolean> =>
+  (await alertsCol().updateOne({ _id: id, user_id: userId }, { $set: { read: true } })).matchedCount > 0;
 
 // ---------- engine ----------
 export async function generateCandidates(userId: string, now = new Date()): Promise<AlertCandidate[]> {
   const day = istDate(now);
-  const lang = getProfile(userId).language;
+  const lang = (await getProfile(userId)).language;
   const cands: AlertCandidate[] = [];
 
   const view = await guarded('market', () => getPortfolioView(userId), null);
@@ -185,14 +187,14 @@ async function sendPush(token: string, title: string, body: string): Promise<boo
 /** Save candidates for one user and push the important ones. Used by the analyst agent's scheduled run. */
 export async function deliverCandidates(userId: string, cands: AlertCandidate[]): Promise<number> {
   let created: AlertCandidate[] = [];
-  try { created = saveAlerts(userId, cands); } catch { return 0; }
+  try { created = await saveAlerts(userId, cands); } catch { return 0; }
   await pushCreated(userId, created);
   return created.length;
 }
 
 export async function refreshAlerts(userId: string, now = new Date()): Promise<{ created: number }> {
   let created: AlertCandidate[] = [];
-  try { created = saveAlerts(userId, await generateCandidates(userId, now)); } catch { /* never throw from refresh */ }
+  try { created = await saveAlerts(userId, await generateCandidates(userId, now)); } catch { /* never throw from refresh */ }
   await pushCreated(userId, created);
   return { created: created.length };
 }
@@ -201,9 +203,9 @@ async function pushCreated(userId: string, created: AlertCandidate[]): Promise<v
   if (!created.length) return;
   const important = created.filter((x) => x.severity !== 'info').slice(0, 3);
   if (config.pushEnabled) {
-    const token = getPushToken(userId);
+    const token = await getPushToken(userId);
     if (token && /^Expo(nent)?PushToken\[.+\]$/.test(token)) {
-      const lang = getProfile(userId).language;
+      const lang = (await getProfile(userId)).language;
       for (const c of important) await sendPush(token, c.title[lang], c.body[lang]);
     }
   }
@@ -219,7 +221,7 @@ export function startAlertScheduler(intervalMs = 15 * 60 * 1000): void {
     running = true;
     try {
       const since = new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString();
-      for (const id of listRecentlyActiveUserIds(since)) await refreshAlerts(id);
+      for (const id of await listRecentlyActiveUserIds(since)) await refreshAlerts(id);
     } catch { /* keep the loop alive */ } finally { running = false; }
   }, intervalMs);
   timer.unref();

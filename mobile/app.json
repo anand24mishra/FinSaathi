@@ -15,7 +15,7 @@
         "backgroundColor": "#1747C7",
         "foregroundImage": "./assets/android-icon-foreground.png"
       },
-      "package": "com.anonymous.finsaathi"
+      "package": "com.finsaathi.app"
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -27,7 +27,8 @@
       "expo-router",
       "expo-font",
       "expo-secure-store",
-      "expo-notifications"
+      "expo-notifications",
+      "@react-native-google-signin/google-signin"
     ]
   }
 }

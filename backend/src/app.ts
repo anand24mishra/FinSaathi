@@ -3,17 +3,17 @@ import websocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { config, type AppConfig } from './config';
-import { initDb } from './db';
+import { initStore } from './store';
 import { marketPlugin } from './market/index';
 import { agentPlugin } from './agent/routes';
 import { authHook, authedRoutes, publicRoutes } from './core/routes';
 import { apiError, installSecurity, isAllowedOrigin } from './core/security';
 import { livePlugin, type LiveOptions } from './market/liveWs';
 
-export interface BuildOptions { logger?: boolean; rate?: AppConfig['rate']; dbPath?: string; skipDbInit?: boolean; live?: LiveOptions }
+export interface BuildOptions { logger?: boolean; rate?: AppConfig['rate']; skipDbInit?: boolean; live?: LiveOptions }
 
 export async function buildApp(opts: BuildOptions = {}): Promise<FastifyInstance> {
-  if (!opts.skipDbInit) initDb(opts.dbPath ?? config.dbPath);
+  if (!opts.skipDbInit) await initStore();
 
   const app = Fastify({
     bodyLimit: config.bodyLimitBytes,

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Profile, User, Lang } from '../../../shared/contract';
-import { stmt } from '../db';
+import { isDuplicateKey, users, type UserDoc } from '../store';
 
 export const DEFAULT_PROFILE: Profile = {
   language: 'en', textScale: 1, theme: 'system', riskLevel: 'balanced', experience: 'beginner',
@@ -22,62 +22,84 @@ export const profileUpdateSchema = z.object({
   onboarded: z.boolean(),
 }).partial().strict();
 
-interface UserRow { id: string; name: string; email: string; pw_salt: string; pw_hash: string; profile: string; push_token: string | null; created_at: string }
+interface UserRow { id: string; name: string; email: string; pw_salt: string; pw_hash: string; profile: Profile; push_token: string | null; created_at: string }
 
-function parseProfile(json: string): Profile {
-  try { return { ...DEFAULT_PROFILE, ...JSON.parse(json) }; } catch { return { ...DEFAULT_PROFILE }; }
-}
-const toUser = (r: UserRow): User => ({ id: r.id, name: r.name, email: r.email, profile: parseProfile(r.profile), createdAt: r.created_at });
+const parseProfile = (p: unknown): Profile => ({ ...DEFAULT_PROFILE, ...((p && typeof p === 'object' ? p : {}) as Partial<Profile>) });
+const toRow = (d: UserDoc): UserRow => ({ id: d._id, name: d.name, email: d.email, pw_salt: d.pw_salt, pw_hash: d.pw_hash, profile: parseProfile(d.profile), push_token: d.push_token ?? null, created_at: d.created_at });
+const toUser = (r: UserRow): User => ({ id: r.id, name: r.name, email: r.email, profile: r.profile, createdAt: r.created_at });
 
 export const normalizeEmail = (e: string) => e.trim().toLowerCase();
 
-export const findUserRowByEmail = (email: string) => stmt('SELECT * FROM users WHERE email = ?').get(normalizeEmail(email)) as UserRow | undefined;
+export async function findUserRowByEmail(email: string): Promise<UserRow | undefined> {
+  const d = await users().findOne({ email: normalizeEmail(email) });
+  return d ? toRow(d) : undefined;
+}
 
-export function createUser(input: { name: string; email: string; salt: string; hash: string; language?: Lang }): User {
+/** Throws a duplicate-key error (see isDuplicateKey) when the email is already registered. */
+export async function createUser(input: { name: string; email: string; salt: string; hash: string; language?: Lang; googleSub?: string }): Promise<User> {
   const id = randomUUID();
   const now = new Date().toISOString();
   const profile: Profile = { ...DEFAULT_PROFILE, language: input.language ?? 'en' };
-  stmt('INSERT INTO users(id,name,email,pw_salt,pw_hash,profile,created_at,last_active_at) VALUES (?,?,?,?,?,?,?,?)')
-    .run(id, input.name.trim(), normalizeEmail(input.email), input.salt, input.hash, JSON.stringify(profile), now, now);
-  return { id, name: input.name.trim(), email: normalizeEmail(input.email), profile, createdAt: now };
+  const doc: UserDoc = { _id: id, name: input.name.trim(), email: normalizeEmail(input.email), pw_salt: input.salt, pw_hash: input.hash, profile, push_token: null, push_platform: null, created_at: now, last_active_at: now };
+  if (input.googleSub) doc.google_sub = input.googleSub;
+  await users().insertOne(doc);
+  return { id, name: doc.name, email: doc.email, profile, createdAt: now };
 }
 
 export const GUEST_EMAIL_SUFFIX = '@guest.finsaathi.app';
 /** Turn an anonymous guest account into a normal one (real name, email, password). Keeps the id, profile and portfolio. */
-export function claimAccount(userId: string, input: { name: string; email: string; salt: string; hash: string }): User | null {
-  const row = stmt('SELECT email FROM users WHERE id = ?').get(userId) as { email: string } | undefined;
-  if (!row || !row.email.endsWith(GUEST_EMAIL_SUFFIX)) return null;
-  stmt('UPDATE users SET name = ?, email = ?, pw_salt = ?, pw_hash = ? WHERE id = ?').run(input.name.trim(), normalizeEmail(input.email), input.salt, input.hash, userId);
+export async function claimAccount(userId: string, input: { name: string; email: string; salt: string; hash: string }): Promise<User | null> {
+  const d = await users().findOne({ _id: userId }, { projection: { email: 1 } });
+  if (!d || !d.email.endsWith(GUEST_EMAIL_SUFFIX)) return null;
+  await users().updateOne({ _id: userId }, { $set: { name: input.name.trim(), email: normalizeEmail(input.email), pw_salt: input.salt, pw_hash: input.hash } });
   return getUser(userId);
 }
 
-export function getUser(userId: string): User | null {
-  const r = stmt('SELECT * FROM users WHERE id = ?').get(userId) as UserRow | undefined;
-  return r ? toUser(r) : null;
+export async function getUser(userId: string): Promise<User | null> {
+  const d = await users().findOne({ _id: userId });
+  return d ? toUser(toRow(d)) : null;
 }
 
-export function getProfile(userId: string): Profile {
-  const u = getUser(userId);
+export async function getProfile(userId: string): Promise<Profile> {
+  const u = await getUser(userId);
   return u ? u.profile : { ...DEFAULT_PROFILE };
 }
 
-export function updateProfile(userId: string, patch: Partial<Profile>): User | null {
-  const u = getUser(userId);
+export async function updateProfile(userId: string, patch: Partial<Profile>): Promise<User | null> {
+  const u = await getUser(userId);
   if (!u) return null;
   const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
-  const merged = { ...u.profile, ...clean };
-  stmt('UPDATE users SET profile = ? WHERE id = ?').run(JSON.stringify(merged), userId);
+  const merged = { ...u.profile, ...clean } as Profile;
+  await users().updateOne({ _id: userId }, { $set: { profile: merged } });
   return { ...u, profile: merged };
 }
 
-export function setPushToken(userId: string, token: string, platform: string): void {
-  stmt('UPDATE users SET push_token = ?, push_platform = ? WHERE id = ?').run(token, platform, userId);
+export async function setPushToken(userId: string, token: string, platform: string): Promise<void> {
+  await users().updateOne({ _id: userId }, { $set: { push_token: token, push_platform: platform } });
 }
-export const getPushToken = (userId: string): string | null =>
-  ((stmt('SELECT push_token FROM users WHERE id = ?').get(userId) as { push_token: string | null } | undefined)?.push_token) ?? null;
+export async function getPushToken(userId: string): Promise<string | null> {
+  return (await users().findOne({ _id: userId }, { projection: { push_token: 1 } }))?.push_token ?? null;
+}
 
-export function touchActive(userId: string): void {
-  stmt('UPDATE users SET last_active_at = ? WHERE id = ?').run(new Date().toISOString(), userId);
+export async function touchActive(userId: string): Promise<void> {
+  await users().updateOne({ _id: userId }, { $set: { last_active_at: new Date().toISOString() } });
 }
-export const listRecentlyActiveUserIds = (sinceIso: string): string[] =>
-  (stmt('SELECT id FROM users WHERE last_active_at >= ?').all(sinceIso) as { id: string }[]).map((r) => r.id);
+export async function listRecentlyActiveUserIds(sinceIso: string): Promise<string[]> {
+  return (await users().find({ last_active_at: { $gte: sinceIso } }, { projection: { _id: 1 } }).toArray()).map((d) => d._id);
+}
+
+/** Sign in with Google: find by Google id, else link to an existing account with the same email, else create one. */
+export async function upsertGoogleUser(g: { sub: string; email: string; name: string; language?: Lang }, randomSecret: { salt: string; hash: string }): Promise<User> {
+  const bySub = await users().findOne({ google_sub: g.sub });
+  if (bySub) return toUser(toRow(bySub));
+  const email = normalizeEmail(g.email);
+  const byEmail = await users().findOne({ email });
+  if (byEmail) { await users().updateOne({ _id: byEmail._id }, { $set: { google_sub: g.sub } }); return toUser(toRow(byEmail)); }
+  try { return await createUser({ name: g.name || email.split('@')[0]!, email, salt: randomSecret.salt, hash: randomSecret.hash, language: g.language, googleSub: g.sub }); }
+  catch (e) {
+    if (!isDuplicateKey(e)) throw e;
+    const again = await users().findOne({ $or: [{ google_sub: g.sub }, { email }] });   // lost a race with a parallel sign-in
+    if (!again) throw e;
+    return toUser(toRow(again));
+  }
+}

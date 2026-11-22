@@ -27,7 +27,7 @@ export interface LiveOptions {
   feed?: LiveFeed;
   intervalOpenMs?: number; intervalClosedMs?: number;
   isOpen?: () => boolean;
-  authenticate?: (token: string) => boolean;
+  authenticate?: (token: string) => boolean | Promise<boolean>;
   heartbeatMs?: number;
 }
 
@@ -163,9 +163,9 @@ export class LiveHub {
   }
 }
 
-const defaultAuth = (token: string): boolean => {
+const defaultAuth = async (token: string): Promise<boolean> => {
   const claims = verifyJwt(token, config.jwtSecret);
-  return !!claims && !!getUser(claims.sub);
+  return !!claims && !!(await getUser(claims.sub));
 };
 
 export const livePlugin: FastifyPluginAsync<LiveOptions> = async (app, opts) => {
@@ -181,18 +181,24 @@ export const livePlugin: FastifyPluginAsync<LiveOptions> = async (app, opts) => 
 
   app.get('/v1/ws', { websocket: true }, (socket: WebSocket, req) => {
     const token = (req.query as { token?: string } | undefined)?.token;
-    let ok = false;
-    try { ok = typeof token === 'string' && token.length < 2000 && authenticate(token); } catch { ok = false; }
-    if (!ok) {
-      const m: LiveServerMsg = { type: 'error', message: 'Unauthorized: pass a valid ?token=<jwt>.' };
-      try { socket.send(JSON.stringify(m)); } catch { /* */ }
-      socket.close(4401, 'unauthorized');
-      return;
-    }
-    const c = hub.add(socket);
-    socket.on('message', (data) => { void hub.handle(c, data.toString()).catch(() => undefined); });
-    socket.on('close', () => hub.remove(c));
-    socket.on('error', () => hub.remove(c));
+    // Authentication is async (database lookup): hold early client messages until it finishes so none are lost.
+    const early: string[] = []; let hubConn: ReturnType<typeof hub.add> | null = null; let closed = false;
+    socket.on('message', (data) => { const t = data.toString(); if (hubConn) void hub.handle(hubConn, t).catch(() => undefined); else early.push(t); });
+    socket.on('close', () => { closed = true; if (hubConn) hub.remove(hubConn); });
+    socket.on('error', () => { closed = true; if (hubConn) hub.remove(hubConn); });
+    void (async () => {
+      let ok = false;
+      try { ok = typeof token === 'string' && token.length < 2000 && (await authenticate(token)); } catch { ok = false; }
+      if (!ok) {
+        const m: LiveServerMsg = { type: 'error', message: 'Unauthorized: pass a valid ?token=<jwt>.' };
+        try { socket.send(JSON.stringify(m)); } catch { /* */ }
+        socket.close(4401, 'unauthorized');
+        return;
+      }
+      if (closed) return;
+      hubConn = hub.add(socket);
+      for (const t of early.splice(0)) void hub.handle(hubConn, t).catch(() => undefined);
+    })();
   });
 };
 

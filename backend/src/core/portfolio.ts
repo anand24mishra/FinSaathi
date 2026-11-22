@@ -1,13 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { DISCLAIMER, type Holding, type HoldingInput, type HealthIssue, type Lang, type PortfolioHealth, type PortfolioView, type Quote } from '../../../shared/contract';
-import { stmt } from '../db';
+import { holdings } from '../store';
 import { getFundDetail, getQuotes, stockMeta } from '../market/service';
 import { getProfile } from './users';
 
 // ---------- repository ----------
 interface HoldingRow { id: string; user_id: string; type: 'stock' | 'fund'; symbol: string | null; scheme_code: number | null; name: string; quantity: number; avg_price: number; buy_date: string | null }
-export const listHoldingRows = (userId: string) => stmt('SELECT * FROM holdings WHERE user_id = ? ORDER BY created_at, id').all(userId) as unknown as HoldingRow[];
+export const listHoldingRows = async (userId: string): Promise<HoldingRow[]> =>
+  (await holdings().find({ user_id: userId }).sort({ created_at: 1, _id: 1 }).toArray()).map((d) => ({ id: d._id, user_id: d.user_id, type: d.type, symbol: d.symbol, scheme_code: d.scheme_code, name: d.name, quantity: d.quantity, avg_price: d.avg_price, buy_date: d.buy_date }));
 
 export const holdingInputSchema = z.object({
   type: z.enum(['stock', 'fund']),
@@ -47,24 +48,22 @@ async function resolveHolding(input: HoldingInput): Promise<{ name: string; symb
 export async function addHolding(userId: string, input: HoldingInput): Promise<Holding> {
   const { name, symbol, scheme } = await resolveHolding(input);
   const id = randomUUID();
-  stmt('INSERT INTO holdings(id,user_id,type,symbol,scheme_code,name,quantity,avg_price,buy_date,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
-    .run(id, userId, input.type, symbol, scheme, name, input.quantity, input.avgPrice, input.buyDate ?? null, new Date().toISOString());
-  const row = listHoldingRows(userId).find((r) => r.id === id)!;
+  await holdings().insertOne({ _id: id, user_id: userId, type: input.type, symbol, scheme_code: scheme, name, quantity: input.quantity, avg_price: input.avgPrice, buy_date: input.buyDate ?? null, created_at: new Date().toISOString() });
+  const row = (await listHoldingRows(userId)).find((r) => r.id === id)!;
   return buildHolding(row, null, null);
 }
 
 /** Replace a holding's fields. Returns null if it does not exist or belongs to someone else. */
 export async function updateHolding(userId: string, id: string, input: HoldingInput): Promise<Holding | null> {
-  if (!listHoldingRows(userId).some((r) => r.id === id)) return null;
+  if (!(await holdings().findOne({ _id: id, user_id: userId }, { projection: { _id: 1 } }))) return null;
   const { name, symbol, scheme } = await resolveHolding(input);
-  stmt('UPDATE holdings SET type=?, symbol=?, scheme_code=?, name=?, quantity=?, avg_price=?, buy_date=? WHERE id=? AND user_id=?')
-    .run(input.type, symbol, scheme, name, input.quantity, input.avgPrice, input.buyDate ?? null, id, userId);
-  const row = listHoldingRows(userId).find((r) => r.id === id);
+  await holdings().updateOne({ _id: id, user_id: userId }, { $set: { type: input.type, symbol, scheme_code: scheme, name, quantity: input.quantity, avg_price: input.avgPrice, buy_date: input.buyDate ?? null } });
+  const row = (await listHoldingRows(userId)).find((r) => r.id === id);
   return row ? buildHolding(row, null, null) : null;
 }
 
-export function deleteHolding(userId: string, id: string): boolean {
-  return Number(stmt('DELETE FROM holdings WHERE id = ? AND user_id = ?').run(id, userId).changes) > 0;
+export async function deleteHolding(userId: string, id: string): Promise<boolean> {
+  return (await holdings().deleteOne({ _id: id, user_id: userId })).deletedCount > 0;
 }
 
 // ---------- view ----------
@@ -84,7 +83,7 @@ function buildHolding(row: HoldingRow, price: { last: number; dayChangePerUnit: 
 }
 
 export async function getPortfolioView(userId: string): Promise<PortfolioView> {
-  const rows = listHoldingRows(userId);
+  const rows = await listHoldingRows(userId);
   const stockSyms = [...new Set(rows.filter((r) => r.type === 'stock' && r.symbol).map((r) => r.symbol!))];
   let quotes: Record<string, Quote> = {};
   if (stockSyms.length) { try { quotes = (await getQuotes(stockSyms)) ?? {}; } catch { quotes = {}; } }
@@ -255,7 +254,7 @@ export function computeHealth(items: HealthHolding[], lang: Lang, asOf = new Dat
 }
 
 export async function getPortfolioHealth(userId: string, lang?: Lang): Promise<PortfolioHealth> {
-  const l: Lang = lang ?? getProfile(userId).language;
+  const l: Lang = lang ?? (await getProfile(userId)).language;
   const view = await getPortfolioView(userId);
   const items: HealthHolding[] = view.holdings.map((h) => ({ name: h.name, type: h.type, sector: h.sector, weight: h.value ?? h.invested, pnlPct: h.pnlPct }));
   return computeHealth(items, l);

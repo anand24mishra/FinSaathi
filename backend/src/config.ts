@@ -31,7 +31,6 @@ const int = (v: string | undefined, d: number) => {
 export interface AppConfig {
   port: number;
   host: string;
-  dbPath: string;
   jwtSecret: string;
   jwtTtlSec: number;
   anthropicApiKey: string | null;
@@ -41,18 +40,10 @@ export interface AppConfig {
   rate: { generalPerMin: number; authPerMin: number };
 }
 
-/** New installs use finsaathi.db; an existing anand.db keeps being used so no data is lost. */
-function defaultDbPath(): string {
-  const dir = path.join(BACKEND_ROOT, 'data');
-  const fresh = path.join(dir, 'finsaathi.db'), legacy = path.join(dir, 'anand.db');
-  return !existsSync(fresh) && existsSync(legacy) ? legacy : fresh;
-}
-
 export function loadConfig(): AppConfig {
   return {
     port: int(process.env.PORT, 4000),
     host: process.env.HOST || '0.0.0.0', // reachable from a phone on the same Wi-Fi; set HOST=127.0.0.1 to lock to this machine
-    dbPath: process.env.FINSAATHI_DB_PATH || process.env.ANAND_DB_PATH || defaultDbPath(),
     jwtSecret: process.env.JWT_SECRET!,
     jwtTtlSec: 30 * 24 * 3600,
     anthropicApiKey: process.env.ANTHROPIC_API_KEY?.trim() || null,

@@ -1,7 +1,7 @@
 import { llmConfigured } from '../ai/llm';
 import type { HealthStatus } from '../../../shared/contract';
 import { config } from '../config';
-import { dbHealthy } from '../db';
+import { storeHealthy } from '../store';
 
 // Lightweight registry: any module can report how an upstream is doing; /v1/health reads it.
 const registry = new Map<string, { ok: boolean; detail?: string; checkedAt: string }>();
@@ -24,7 +24,7 @@ export async function guarded<T>(service: string, fn: () => Promise<T>, fallback
 }
 
 export function getHealth(): HealthStatus {
-  const dbOk = dbHealthy();
+  const dbOk = storeHealthy();
   const services: HealthStatus['services'] = { db: { ok: dbOk, checkedAt: new Date().toISOString() } };
   for (const name of ['market', 'news', 'ipo', 'funds']) services[name] = registry.get(name) ?? { ok: true, detail: 'not checked yet' };
   for (const [k, v] of registry) if (!(k in services)) services[k] = v;

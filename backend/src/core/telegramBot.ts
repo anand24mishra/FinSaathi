@@ -5,7 +5,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { CallAction, CallsFeed, Lang, StockCall, TelegramStatus } from '../../../shared/contract';
 import { config } from '../config';
-import { stmt } from '../db';
+import { telegramCodes, telegramLinks } from '../store';
 import { getCallsFeed } from '../market/analysis/calls';
 import { getProfile } from './users';
 
@@ -77,35 +77,34 @@ const bump = (m: Map<string, { n: number; resetAt: number }>, key: string, windo
 
 export class LinkRateLimited extends Error {}
 /** Creates a single-use code (stored hashed) for the user; older unused codes of that user are revoked. */
-export function createLinkCode(userId: string): string {
+export async function createLinkCode(userId: string): Promise<string> {
   if (!bump(created, userId, CODE_TTL_MS, CODES_PER_WINDOW)) throw new LinkRateLimited('Too many link codes requested. Please wait a few minutes.');
   const code = newCode();
-  stmt('DELETE FROM telegram_link_codes WHERE user_id = ? OR expires_at < ?').run(userId, deps.now());
-  stmt('INSERT INTO telegram_link_codes(code_hash,user_id,expires_at,created_at) VALUES (?,?,?,?)').run(sha(code), userId, deps.now() + CODE_TTL_MS, new Date(deps.now()).toISOString());
+  await telegramCodes().deleteMany({ $or: [{ user_id: userId }, { expires_at: { $lt: deps.now() } }] });
+  await telegramCodes().insertOne({ _id: sha(code), user_id: userId, expires_at: deps.now() + CODE_TTL_MS, created_at: new Date(deps.now()).toISOString() });
   return code;
 }
 /** Consumes a code. Returns the user id, or null when unknown/expired/already used. */
-export function consumeLinkCode(code: string): string | null {
+export async function consumeLinkCode(code: string): Promise<string | null> {
   const h = sha(code.trim().toUpperCase());
-  const row = stmt('SELECT user_id, expires_at FROM telegram_link_codes WHERE code_hash = ?').get(h) as { user_id: string; expires_at: number } | undefined;
+  const row = await telegramCodes().findOneAndDelete({ _id: h });   // single-use, even when expired
   if (!row) return null;
-  stmt('DELETE FROM telegram_link_codes WHERE code_hash = ?').run(h); // single-use, even when expired
   return Number(row.expires_at) >= deps.now() ? row.user_id : null;
 }
-export function bindChat(userId: string, chatId: string): void {
-  stmt('DELETE FROM telegram_links WHERE chat_id = ? OR user_id = ?').run(chatId, userId);
-  stmt('INSERT INTO telegram_links(user_id,chat_id,linked_at) VALUES (?,?,?)').run(userId, chatId, new Date(deps.now()).toISOString());
+export async function bindChat(userId: string, chatId: string): Promise<void> {
+  await telegramLinks().deleteMany({ $or: [{ chat_id: chatId }, { _id: userId }] });
+  await telegramLinks().insertOne({ _id: userId, chat_id: chatId, linked_at: new Date(deps.now()).toISOString() });
 }
-export const chatForUser = (userId: string): string | null => (stmt('SELECT chat_id FROM telegram_links WHERE user_id = ?').get(userId) as { chat_id: string } | undefined)?.chat_id ?? null;
-export const userForChat = (chatId: string): string | null => (stmt('SELECT user_id FROM telegram_links WHERE chat_id = ?').get(chatId) as { user_id: string } | undefined)?.user_id ?? null;
-export const unlinkUser = (userId: string): boolean => Number(stmt('DELETE FROM telegram_links WHERE user_id = ?').run(userId).changes) > 0;
-export const isLinked = (userId: string): boolean => chatForUser(userId) !== null;
+export const chatForUser = async (userId: string): Promise<string | null> => (await telegramLinks().findOne({ _id: userId }))?.chat_id ?? null;
+export const userForChat = async (chatId: string): Promise<string | null> => (await telegramLinks().findOne({ chat_id: chatId }))?._id ?? null;
+export const unlinkUser = async (userId: string): Promise<boolean> => (await telegramLinks().deleteOne({ _id: userId })).deletedCount > 0;
+export const isLinked = async (userId: string): Promise<boolean> => (await chatForUser(userId)) !== null;
 
 // ---------- status for the app ----------
 export async function getTelegramStatus(userId: string, linkUrl: string | null = null): Promise<TelegramStatus> {
   if (!token()) return { configured: false, linked: false, botUsername: null, linkUrl: null, detail: NOT_CONFIGURED_DETAIL };
   const botUsername = await ensureMe();
-  const linked = isLinked(userId);
+  const linked = await isLinked(userId);
   const detail = !botUsername ? 'Telegram is not reachable right now. Try again in a moment.'
     : linkUrl ? 'Open the link on a device with Telegram and press Start. It works once and expires in 15 minutes.'
     : linked ? 'Connected. Important alerts arrive in your Telegram chat; send /calls or /note to the bot any time.'
@@ -116,12 +115,12 @@ export async function startTelegramLink(userId: string): Promise<TelegramStatus>
   if (!token()) return getTelegramStatus(userId);
   const botUsername = await ensureMe();
   if (!botUsername) return getTelegramStatus(userId);
-  return getTelegramStatus(userId, `https://t.me/${botUsername}?start=${createLinkCode(userId)}`);
+  return getTelegramStatus(userId, `https://t.me/${botUsername}?start=${await createLinkCode(userId)}`);
 }
 export async function unlinkTelegram(userId: string): Promise<TelegramStatus> {
-  const chat = chatForUser(userId);
-  unlinkUser(userId);
-  stmt('DELETE FROM telegram_link_codes WHERE user_id = ?').run(userId);
+  const chat = await chatForUser(userId);
+  await unlinkUser(userId);
+  await telegramCodes().deleteMany({ user_id: userId });
   if (chat) void sendMessage(chat, 'Unlinked from FinSaathi. You will no longer get alerts here.\nFinSaathi से जुड़ाव हटा दिया गया। अब यहाँ अलर्ट नहीं आएँगे।');
   return getTelegramStatus(userId);
 }
@@ -134,7 +133,7 @@ export async function sendMessage(chatId: string, text: string): Promise<boolean
   try { await api('sendMessage', { chat_id: chatId, text: text.slice(0, 4000), disable_web_page_preview: true }); return true; }
   catch (e: any) {
     deps.log.warn({ chat: maskChat(chatId), err: e?.message }, 'telegram send failed');
-    if (e instanceof TgError && (e.code === 403 || /chat not found/i.test(e.message))) stmt('DELETE FROM telegram_links WHERE chat_id = ?').run(chatId);
+    if (e instanceof TgError && (e.code === 403 || /chat not found/i.test(e.message))) await telegramLinks().deleteMany({ chat_id: chatId });
     return false;
   }
 }
@@ -142,8 +141,8 @@ export async function sendMessage(chatId: string, text: string): Promise<boolean
 export async function sendTelegramAlerts(userId: string, items: { title: Bi; body: Bi }[]): Promise<void> {
   try {
     if (!token() || !items.length) return;
-    const chat = chatForUser(userId); if (!chat) return;
-    const lang = getProfile(userId).language;
+    const chat = await chatForUser(userId); if (!chat) return;
+    const lang = (await getProfile(userId)).language;
     for (const i of items.slice(0, 3)) await sendMessage(chat, `${i.title[lang]}\n${i.body[lang].slice(0, 600)}\n\n${SEBI_LINE[lang]}`);
   } catch { /* never break alert delivery */ }
 }
@@ -181,18 +180,18 @@ export function formatCalls(f: CallsFeed, lang: Lang): string {
 
 async function handleCommand(chatId: string, cmd: string, arg: string): Promise<void> {
   const reply = (b: Bi, lang: Lang = 'en') => sendMessage(chatId, b[lang]);
-  const userId = userForChat(chatId);
-  const lang: Lang = userId ? getProfile(userId).language : 'en';
+  const userId = await userForChat(chatId);
+  const lang: Lang = userId ? (await getProfile(userId)).language : 'en';
   switch (cmd) {
     case 'start': {
       const code = arg.trim();
       if (!code) { await reply(userId ? T.help : T.startNoCode, lang); return; }
       if (!bump(attempts, chatId, 60_000, START_ATTEMPTS_PER_MIN)) { await reply(T.slow, lang); return; }
-      const uid = /^[A-Za-z0-9_-]{6,64}$/.test(code) ? consumeLinkCode(code) : null;
+      const uid = /^[A-Za-z0-9_-]{6,64}$/.test(code) ? await consumeLinkCode(code) : null;
       if (!uid) { await reply(T.badCode, lang); return; }
-      bindChat(uid, chatId);
+      await bindChat(uid, chatId);
       deps.log.info({ chat: maskChat(chatId) }, 'telegram chat linked');
-      await reply(T.linked, getProfile(uid).language);
+      await reply(T.linked, (await getProfile(uid)).language);
       return;
     }
     case 'calls': case 'note': {
@@ -210,7 +209,7 @@ async function handleCommand(chatId: string, cmd: string, arg: string): Promise<
     }
     case 'stop': case 'unlink': {
       if (!userId) { await reply(T.notLinked); return; }
-      unlinkUser(userId); await reply(T.unlinked, lang); return;
+      await unlinkUser(userId); await reply(T.unlinked, lang); return;
     }
     default: await reply(T.help, lang);
   }
@@ -224,7 +223,7 @@ export async function handleUpdate(u: TgUpdate): Promise<void> {
     if (!m?.text || !chat || chat.type !== 'private') return;
     const chatId = String(chat.id);
     const c = m.text.trim().match(/^\/([A-Za-z_]+)(?:@\w+)?(?:\s+([\s\S]*))?$/);
-    if (!c) { await sendMessage(chatId, T.help[(userForChat(chatId) ? getProfile(userForChat(chatId)!).language : 'en')]); return; }
+    if (!c) { await sendMessage(chatId, T.help[await (async () => { const u = await userForChat(chatId); return u ? (await getProfile(u)).language : 'en'; })()]); return; }
     await handleCommand(chatId, c[1].toLowerCase(), c[2] ?? '');
   } catch (e: any) { deps.log.warn({ err: scrub(String(e?.message ?? e)) }, 'telegram update failed'); }
 }

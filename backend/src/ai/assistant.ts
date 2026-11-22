@@ -240,7 +240,7 @@ async function portfolioAnswer(userId: string, lang: Lang): Promise<Draft> {
 async function planAnswer(userId: string, msg: string, lang: Lang): Promise<Draft> {
   const en = lang === 'en'; const amt = parseAmount(msg); const used = ['alternatives']; const cites: Citation[] = [];
   let risk: string | null = null;
-  try { risk = getProfile(userId).riskLevel; used.push('profile'); } catch { /* optional */ }
+  try { risk = (await getProfile(userId)).riskLevel; used.push('profile'); } catch { /* optional */ }
   const rl = risk ? ({ conservative: en ? 'cautious' : 'सतर्क', balanced: en ? 'balanced' : 'संतुलित', growth: en ? 'growth-oriented' : 'बढ़त-उन्मुख' } as Record<string, string>)[risk] : null;
   const alt = await getAlternatives(lang).catch(() => null);
   if (alt) { cites.push({ label: 'FinSaathi alternatives guide', ref: '/alternatives', asOf: alt.asOf }); alt.cards.filter((c) => c.quote).forEach((c) => cites.push({ label: `${c.title} ETF price (${c.quote!.source})`, ref: c.quote!.symbol, asOf: c.quote!.asOf })); }

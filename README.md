@@ -10,6 +10,7 @@ A bilingual (Hindi and English) mobile app and backend for Indian retail investo
 - **Alerts**: price and news alerts delivered as push notifications and through a Telegram bot.
 - **Assistant**: question-and-answer help on markets and personal finance, with an educational disclaimer on every answer.
 - **Learn**: short lessons on common investing concepts.
+- **Sign in**: email and password, Google, or continue as a guest and save the account later.
 - **Hindi and English**: the interface, news summaries and glossary are available in both languages.
 
 ## Market data sources
@@ -29,7 +30,7 @@ The backend signs in to Angel One by itself using a time-based one-time password
 
 ```
 backend/    Fastify + TypeScript API and WebSocket server
-  src/core/     authentication, portfolio, alerts, Telegram bot, SQLite storage
+  src/core/     authentication, portfolio, alerts, Telegram bot, MongoDB storage
   src/market/   data providers and analysis
   src/ai/       assistant integration and guardrails
 mobile/     Expo (React Native) application
@@ -42,7 +43,7 @@ start.sh    starts the backend and the Expo dev server
 ## Tech stack
 
 - **Mobile**: Expo SDK 58, React Native 0.88, Expo Router, NativeWind, Reanimated
-- **Backend**: Node.js, TypeScript, Fastify, WebSocket, SQLite
+- **Backend**: Node.js, TypeScript, Fastify, WebSocket, MongoDB
 - **Testing**: Vitest
 
 ## Getting started
@@ -71,6 +72,7 @@ All settings are environment variables in `backend/.env` and all are optional (`
 
 | Variable | Purpose |
 |---|---|
+| `MONGODB_URI` | MongoDB connection string (required). A free Atlas M0 cluster is enough. |
 | `ANGEL_API_KEY`, `ANGEL_CLIENT_CODE`, `ANGEL_PIN`, `ANGEL_TOTP_SECRET` | Angel One SmartAPI live quotes. Create an app at smartapi.angelone.in and enable TOTP to get these. |
 | `GEMINI_API_KEY` or `ANTHROPIC_API_KEY` | Enables the assistant |
 | `TELEGRAM_BOT_TOKEN` | Enables the Telegram alert bot |

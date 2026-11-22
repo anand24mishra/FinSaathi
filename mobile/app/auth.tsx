@@ -10,6 +10,7 @@ import type { AuthResponse } from '@/api/contract';
 import { useApp } from '@/state/AppState';
 import { useT } from '@/i18n';
 import { ChevronLeft } from 'lucide-react-native';
+import { GoogleCancelled, getGoogleIdToken, googleAvailable } from '@/lib/googleSignIn';
 import { space } from '@/theme/tokens';
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -25,6 +26,20 @@ export default function Auth() {
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<{ name?: string; email?: string; password?: string; form?: string }>({});
   if (token) return <Redirect href="/" />;
+
+  const googleLogin = async () => {
+    setErrors({}); setBusy(true);
+    try {
+      const idToken = await getGoogleIdToken();
+      const r = await api.post<AuthResponse>('/auth/google', { idToken, language: lang }, { timeoutMs: 30000 });
+      signIn(r);
+      router.replace('/');
+    } catch (err) {
+      if (err instanceof GoogleCancelled) return;
+      const a = err as ApiError;
+      setErrors({ form: a.isNetwork ? t('err.offlineBody') : t('auth.googleFailed') });
+    } finally { setBusy(false); }
+  };
 
   const submit = async () => {
     const e: typeof errors = {};
@@ -51,6 +66,7 @@ export default function Auth() {
       <Text v="h1">{mode === 'register' ? t('auth.createTitle') : t('auth.loginTitle')}</Text>
       <Text v="body" tone="soft">{mode === 'register' ? t('auth.createBody') : t('auth.loginBody')}</Text>
       {errors.form ? <Banner tone="error" title={errors.form} /> : null}
+      {googleAvailable() ? (<><Button label={t('auth.google')} variant="secondary" onPress={googleLogin} loading={busy} /><Text v="body" tone="soft" center>{t('auth.or')}</Text></>) : null}
       {mode === 'register' ? <Field label={t('welcome.yourName')} value={draftName} onChangeText={setDraftName} error={errors.name} autoComplete="name" /> : null}
       <Field label={t('auth.email')} value={email} onChangeText={setEmail} error={errors.email} keyboardType="email-address" autoComplete="email" />
       <Field label={t('auth.password')} value={password} onChangeText={setPassword} error={errors.password} secure autoComplete={mode === 'register' ? 'password-new' : 'password'} hint={mode === 'register' ? t('auth.passwordHint') : undefined} onSubmitEditing={submit} />

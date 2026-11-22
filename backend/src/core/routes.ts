@@ -12,7 +12,8 @@ import { getMarketOverview } from '../market/overview';
 import { buildPlan, planRequestSchema } from './planner';
 import { addHolding, deleteHolding, updateHolding, getPortfolioHealth, getPortfolioView, holdingInputSchema } from './portfolio';
 import { apiError } from './security';
-import { claimAccount, createUser, findUserRowByEmail, getUser, normalizeEmail, profileUpdateSchema, setPushToken, touchActive, updateProfile, getProfile } from './users';
+import { claimAccount, createUser, findUserRowByEmail, getUser, normalizeEmail, profileUpdateSchema, setPushToken, touchActive, updateProfile, getProfile, upsertGoogleUser } from './users';
+import { verifyGoogleIdToken } from './google';
 
 const registerSchema = z.object({
   name: z.string().trim().min(1, 'Please enter your name').max(80),
@@ -41,13 +42,13 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
 
   app.post('/v1/auth/register', async (req, reply) => {
     const body = registerSchema.parse(req.body ?? {});
-    if (findUserRowByEmail(body.email)) {
+    if (await findUserRowByEmail(body.email)) {
       await dummyVerify(body.password);
       return reply.code(409).send(apiError('email_taken', 'An account with this email already exists. Try logging in instead.'));
     }
     const { salt, hash } = await hashPassword(body.password);
     let user;
-    try { user = createUser({ name: body.name, email: normalizeEmail(body.email), salt, hash, language: body.language }); }
+    try { user = await createUser({ name: body.name, email: normalizeEmail(body.email), salt, hash, language: body.language }); }
     catch { return reply.code(409).send(apiError('email_taken', 'An account with this email already exists. Try logging in instead.')); }
     const token = signJwt({ sub: user.id }, config.jwtSecret, config.jwtTtlSec);
     const res: AuthResponse = { token, user };
@@ -58,19 +59,31 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
   app.post('/v1/auth/guest', async (req, reply) => {
     const body = z.object({ language: z.enum(['en', 'hi']).optional() }).parse(req.body ?? {});
     const { salt, hash } = await hashPassword(randomBytes(24).toString('hex'));
-    const user0 = createUser({ name: 'Guest', email: `guest-${randomUUID()}@guest.finsaathi.app`, salt, hash, language: body.language });
-    const user = updateProfile(user0.id, { onboarded: true, experience: 'beginner', riskLevel: 'balanced', goals: ['wealth'], horizonYears: 5 }) ?? user0;
+    const user0 = await createUser({ name: 'Guest', email: `guest-${randomUUID()}@guest.finsaathi.app`, salt, hash, language: body.language });
+    const user = await updateProfile(user0.id, { onboarded: true, experience: 'beginner', riskLevel: 'balanced', goals: ['wealth'], horizonYears: 5 }) ?? user0;
     const res: AuthResponse = { token: signJwt({ sub: user.id }, config.jwtSecret, config.jwtTtlSec), user };
     return reply.code(201).send(res);
   });
 
+  /** Sign in with Google. The app sends the Google ID token; we verify it with Google and return our own session. */
+  app.post('/v1/auth/google', async (req, reply) => {
+    const body = z.object({ idToken: z.string().min(20).max(4096), language: z.enum(['en', 'hi']).optional() }).parse(req.body ?? {});
+    const g = await verifyGoogleIdToken(body.idToken);
+    if (!g) return reply.code(401).send(apiError('invalid_google_token', 'Google sign-in could not be verified. Please try again.'));
+    const { salt, hash } = await hashPassword(randomBytes(24).toString('hex'));   // Google accounts get an unguessable password they never use
+    const user = await upsertGoogleUser({ ...g, language: body.language }, { salt, hash });
+    await touchActive(user.id);
+    const res: AuthResponse = { token: signJwt({ sub: user.id }, config.jwtSecret, config.jwtTtlSec), user };
+    return res;
+  });
+
   app.post('/v1/auth/login', async (req, reply) => {
     const body = loginSchema.parse(req.body ?? {});
-    const row = findUserRowByEmail(body.email);
+    const row = await findUserRowByEmail(body.email);
     if (!row) { await dummyVerify(body.password); return reply.code(401).send(apiError('invalid_credentials', 'Email or password is incorrect.')); }
     if (!(await verifyPassword(body.password, row.pw_salt, row.pw_hash))) return reply.code(401).send(apiError('invalid_credentials', 'Email or password is incorrect.'));
-    const user = getUser(row.id)!;
-    touchActive(user.id);
+    const user = (await getUser(row.id))!;
+    await touchActive(user.id);
     const res: AuthResponse = { token: signJwt({ sub: user.id }, config.jwtSecret, config.jwtTtlSec), user };
     return res;
   });
@@ -92,10 +105,10 @@ export const authHook = async (req: FastifyRequest, reply: FastifyReply) => {
     const h = req.headers.authorization;
     const m = typeof h === 'string' ? /^Bearer\s+(\S+)$/i.exec(h) : null;
     const claims = m ? verifyJwt(m[1]!, config.jwtSecret) : null;
-    if (!claims || !getUser(claims.sub)) return reply.code(401).send(apiError('unauthorized', 'Please log in again.'));
+    if (!claims || !(await getUser(claims.sub))) return reply.code(401).send(apiError('unauthorized', 'Please log in again.'));
     req.user = { id: claims.sub };
     const now = Date.now();
-    if (now - (lastTouch.get(claims.sub) ?? 0) > 60_000) { lastTouch.set(claims.sub, now); touchActive(claims.sub); }
+    if (now - (lastTouch.get(claims.sub) ?? 0) > 60_000) { lastTouch.set(claims.sub, now); void touchActive(claims.sub).catch(() => undefined); }
 };
 
 export const authedRoutes: FastifyPluginAsync = async (app) => {
@@ -104,10 +117,10 @@ export const authedRoutes: FastifyPluginAsync = async (app) => {
   /** Save a guest account: set a real name, email and password so the data survives a cleared browser or a new device. */
   app.post('/v1/me/claim', async (req, reply) => {
     const body = registerSchema.omit({ language: true }).parse(req.body ?? {});
-    if (findUserRowByEmail(body.email)) { await dummyVerify(body.password); return reply.code(409).send(apiError('email_taken', 'An account with this email already exists. Try logging in instead.')); }
+    if (await findUserRowByEmail(body.email)) { await dummyVerify(body.password); return reply.code(409).send(apiError('email_taken', 'An account with this email already exists. Try logging in instead.')); }
     const { salt, hash } = await hashPassword(body.password);
     let user;
-    try { user = claimAccount(req.user!.id, { name: body.name, email: body.email, salt, hash }); }
+    try { user = await claimAccount(req.user!.id, { name: body.name, email: body.email, salt, hash }); }
     catch { return reply.code(409).send(apiError('email_taken', 'An account with this email already exists. Try logging in instead.')); }
     if (!user) return reply.code(400).send(apiError('not_a_guest', 'This account is already saved.'));
     return user;
@@ -118,7 +131,7 @@ export const authedRoutes: FastifyPluginAsync = async (app) => {
   });
   app.post('/v1/me/push-token', async (req) => {
     const b = pushSchema.parse(req.body ?? {});
-    setPushToken(req.user!.id, b.token, b.platform);
+    await setPushToken(req.user!.id, b.token, b.platform);
     return { ok: true };
   });
 
@@ -141,24 +154,24 @@ export const authedRoutes: FastifyPluginAsync = async (app) => {
     return h ?? reply.code(404).send(apiError('not_found', 'That holding was not found.'));
   });
   app.delete('/v1/portfolio/holdings/:id', async (req, reply) => {
-    if (!deleteHolding(req.user!.id, (req.params as { id: string }).id)) return reply.code(404).send(apiError('not_found', 'That holding was not found.'));
+    if (!(await deleteHolding(req.user!.id, (req.params as { id: string }).id))) return reply.code(404).send(apiError('not_found', 'That holding was not found.'));
     return { ok: true };
   });
-  app.get('/v1/portfolio/health', async (req) => getPortfolioHealth(req.user!.id, langOf(req.query, getProfile(req.user!.id).language)));
+  app.get('/v1/portfolio/health', async (req) => getPortfolioHealth(req.user!.id, langOf(req.query, (await getProfile(req.user!.id)).language)));
 
   app.post('/v1/planner', async (req) => {
     const body = planRequestSchema.parse(req.body ?? {});
-    return buildPlan(body, langOf(req.query, getProfile(req.user!.id).language));
+    return buildPlan(body, langOf(req.query, (await getProfile(req.user!.id)).language));
   });
 
-  app.get('/v1/alerts', async (req) => listAlerts(req.user!.id, langOf(req.query, getProfile(req.user!.id).language)));
-  app.get('/v1/alerts/unread-count', async (req) => ({ count: unreadCount(req.user!.id) }));
+  app.get('/v1/alerts', async (req) => listAlerts(req.user!.id, langOf(req.query, (await getProfile(req.user!.id)).language)));
+  app.get('/v1/alerts/unread-count', async (req) => ({ count: await unreadCount(req.user!.id) }));
   app.post('/v1/alerts/refresh', async (req) => {
     await refreshAlerts(req.user!.id);
-    return listAlerts(req.user!.id, langOf(req.query, getProfile(req.user!.id).language));
+    return listAlerts(req.user!.id, langOf(req.query, (await getProfile(req.user!.id)).language));
   });
   app.post('/v1/alerts/:id/read', async (req, reply) => {
-    if (!markAlertRead(req.user!.id, (req.params as { id: string }).id)) return reply.code(404).send(apiError('not_found', 'That alert was not found.'));
+    if (!(await markAlertRead(req.user!.id, (req.params as { id: string }).id))) return reply.code(404).send(apiError('not_found', 'That alert was not found.'));
     return { ok: true };
   });
 };
