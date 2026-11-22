@@ -1,13 +1,5 @@
 // Signs release builds with the keystore described in ~/.finsaathi/keystore.properties (kept outside the repo).
-const { withAppBuildGradle, withProjectBuildGradle } = require('expo/config-plugins');
-
-// Compile against Android platform 36 (the one present in a default Android Studio install); the Expo default is 37.
-const withSdk36 = (config) => withProjectBuildGradle(config, (c) => {
-  if (!c.modResults.contents.includes('compileSdkVersion = 36')) {
-    c.modResults.contents = c.modResults.contents.replace('apply plugin: "expo-root-project"', 'ext {\n  compileSdkVersion = 36\n  targetSdkVersion = 36\n}\n\napply plugin: "expo-root-project"');
-  }
-  return c;
-});
+const { withAppBuildGradle } = require('expo/config-plugins');
 
 const withSigning = (config) => withAppBuildGradle(config, (c) => {
   let g = c.modResults.contents;
@@ -32,4 +24,4 @@ const withSigning = (config) => withAppBuildGradle(config, (c) => {
   return c;
 });
 
-module.exports = (config) => withSdk36(withSigning(config));
+module.exports = withSigning;
