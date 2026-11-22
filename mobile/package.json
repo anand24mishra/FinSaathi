@@ -59,7 +59,8 @@
     "web": "sh ../start.sh --web",
     "expo-only": "expo start",
     "typecheck": "tsc --noEmit",
-    "sync-contract": "sh scripts/sync-contract.sh"
+    "sync-contract": "sh scripts/sync-contract.sh",
+    "postinstall": "node scripts/patch-dependencies.js"
   },
   "private": true
 }
