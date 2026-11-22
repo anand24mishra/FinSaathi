@@ -155,17 +155,19 @@ async function loadMaster(): Promise<void> {
   if (loadingMaster) return loadingMaster;
   loadingMaster = (async () => {
     let list: any[] | null = null;
-    try { if (Date.now() - statSync(SCRIP_CACHE).mtimeMs < 24 * 3600_000) list = JSON.parse(readFileSync(SCRIP_CACHE, 'utf8')); } catch { /* download */ }
+    try { if (Date.now() - statSync(SCRIP_CACHE).mtimeMs < 24 * 3600_000) { const c = JSON.parse(readFileSync(SCRIP_CACHE, 'utf8')); if (Array.isArray(c) && c.length > 1000) list = c; } } catch { /* download */ }
     if (!list) {
       try {
         const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 40_000);
         try {
           const res = await fetchImpl(SCRIP_URL, { signal: ctl.signal });
           if (!res.ok) throw new Error(`scrip master HTTP ${res.status}`);
-          const text = await res.text(); list = JSON.parse(text);
+          const text = await res.text(); const parsed = JSON.parse(text);
+          if (!Array.isArray(parsed) || parsed.length < 1000) throw new Error('scrip master is not a valid list');
+          list = parsed;
           try { mkdirSync(DATA_DIR, { recursive: true }); writeFileSync(SCRIP_CACHE, text); } catch { /* best effort */ }
         } finally { clearTimeout(t); }
-      } catch (e) { try { list = JSON.parse(readFileSync(SCRIP_CACHE, 'utf8')); } catch { throw e; } }
+      } catch (e) { try { const c = JSON.parse(readFileSync(SCRIP_CACHE, 'utf8')); if (!Array.isArray(c) || c.length < 1000) throw e; list = c; } catch { throw e; } }
     }
     const { equities, indices } = parseScripMaster(list!);
     equityMap = equities; indexMap = indices;
@@ -195,10 +197,10 @@ export function angelRowToBulkRow(symbol: string, name: string, r: any): BulkRow
   const change = num(r.netChange) ?? (prev != null ? price - prev : 0);
   const changePct = num(r.percentChange) ?? (prev ? (change / prev) * 100 : 0);
   const vol = num(r.tradeVolume);
-  const t = parseNseTime(r.exchFeedTime);
+  const t = (parseNseTime(r.exchTradeTime) ?? parseNseTime(r.exchFeedTime));
   return {
     symbol, name, series: 'EQ', price, prevClose: prev, change, changePct, open: num(r.open), dayHigh: num(r.high), dayLow: num(r.low),
-    volume: vol, tradedValue: vol != null ? vol * price : null, yearHigh: num(r['52WeekHighPrice']), yearLow: num(r['52WeekLowPrice']),
+    volume: vol, tradedValue: vol != null ? vol * price : null, yearHigh: num(r['52WeekHigh'] ?? r['52WeekHighPrice']), yearLow: num(r['52WeekLow'] ?? r['52WeekLowPrice']),
     change30dPct: null, change365dPct: null, updatedAt: t ?? Date.now(),
   };
 }

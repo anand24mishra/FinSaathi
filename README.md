@@ -12,7 +12,7 @@
 ### 🚀 Key Highlights
 
 - **Bilingual Interface**: Seamless Hindi and English localization across all financial terms, news summaries, and AI conversations.
-- **Multi-Source Market Feeds**: Integration with NSE Live, Dhan API, Yahoo Finance, MFAPI (Mutual Funds), and Frankfurter currency feeds.
+- **Multi-Source Market Feeds**: Integration with NSE Live, Angel One SmartAPI (free, 5s cache), Yahoo Finance, MFAPI (Mutual Funds), and Frankfurter currency feeds.
 - **Legend Persona Analysis**: Dual-perspective fundamental and momentum evaluation:
   - **Buffett Style**: Moat evaluation, free cash flow consistency, ROE/ROCE compounding, debt coverage, and margin of safety.
   - **Jhunjhunwala Style**: Growth momentum, sector tailwinds, Capex cycles, and high operating leverage.
@@ -31,7 +31,7 @@ fin-saathi/
 │   │   ├── agent/            # Autonomous research & market analyst agents
 │   │   ├── ai/               # LLM integration, guardrails & narration
 │   │   ├── core/             # Auth, portfolio, alerts, Telegram bot & SQLite DB
-│   │   ├── market/           # Providers (Dhan, NSE, Yahoo, MFAPI, RSS), analysis engine
+│   │   ├── market/           # Providers (Angel One, NSE, Yahoo, MFAPI, RSS), analysis engine
 │   │   └── server.ts         # Fastify HTTP & WebSocket server entrypoint
 │   └── package.json
 ├── mobile/                   # Expo React Native mobile application
@@ -64,7 +64,7 @@ fin-saathi/
 ### Backend Service
 - **Runtime**: [Node.js](https://nodejs.org/) (ES Modules) with [TypeScript](https://www.typescriptlang.org/)
 - **Web Framework**: [Fastify](https://fastify.dev/) with HTTP/2 and WebSocket support
-- **Market Data**: Dhan HQ Open API, NSE India Scraping/Live, Yahoo Finance API, MFAPI
+- **Market Data**: Angel One SmartAPI, NSE India Scraping/Live, Yahoo Finance API, MFAPI
 - **AI Engine**: Anthropic Claude API / LLM abstraction layer with strict financial advice guardrails
 - **Database**: Embedded SQLite with AES-256 encrypted credentials
 - **Bot Engine**: Telegram Bot API for real-time portfolio threshold alerts
@@ -92,7 +92,7 @@ fin-saathi/
    cp backend/.env.example backend/.env
    cp mobile/.env.example mobile/.env
    ```
-   *(Add your Dhan API credentials, Anthropic API key, or Telegram Bot Token if live external integrations are needed; dummy/cached fallbacks work out of the box).*
+   *(Add your Angel One credentials (ANGEL_API_KEY, ANGEL_CLIENT_CODE, ANGEL_PIN, ANGEL_TOTP_SECRET), Anthropic API key, or Telegram Bot Token if live external integrations are needed; dummy/cached fallbacks work out of the box).*
 
 3. **Install dependencies:**
    ```bash

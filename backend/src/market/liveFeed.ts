@@ -26,7 +26,7 @@ export interface LiveFeed {
 export interface NseYahooOptions { yahooCapPerPoll?: number; yahooMinGapOpenMs?: number; yahooMinGapClosedMs?: number; getQuoteFn?: (s: string) => Promise<Quote> }
 
 export class NseYahooFeed implements LiveFeed {
-  /** Honest labels: dynamic because Dhan can become configured/unconfigured without restarting (renewal, a key going stale). */
+  /** Honest labels: dynamic because Angel One can become configured/unconfigured without restarting. */
   get name() { return angelConfigured() ? 'Angel One broker feed (NSE website for other stocks)' : 'NSE India website data (Yahoo Finance fallback for a few symbols)'; }
   get delayNote() { return angelConfigured() ? 'Broker market feed refreshed about every 5 seconds for Nifty 100 and watched stocks; other symbols come from the NSE website or Yahoo Finance (unofficial, can lag).' : 'Not a licensed real-time feed. NSE website data is typically a few seconds to a minute behind the exchange; symbols outside the NSE snapshot come from Yahoo Finance (unofficial), often ~15 minutes delayed.'; }
   private yahoo = new Map<string, { at: number; quote: Quote }>();

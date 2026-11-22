@@ -37,7 +37,7 @@ export function quoteFromChart(ch: ChartData): Quote {
 }
 
 export async function getQuote(symbol: string): Promise<Quote> {
-  const bulk = getBulkQuote(symbol);   // fresh whole-market snapshot first (Dhan when configured, else NSE website; any listed stock, no Yahoo call)
+  const bulk = getBulkQuote(symbol);   // fresh whole-market snapshot first (Angel One rows overlaid on the NSE website; any listed stock, no Yahoo call)
   if (bulk) return bulk;
   if (symbol.startsWith('^') && angelConfigured()) {   // indices are never in the bulk snapshot (it is equities only); try Angel One directly
     const row = await getAngelIndexQuote(symbol).catch(() => null);
