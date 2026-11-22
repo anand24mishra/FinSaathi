@@ -93,7 +93,7 @@ export async function getFundamentals(symbol: string, lang: Lang = 'en'): Promis
     const d = r.data;
     const none = Object.values({ ...d, sector: null, industry: null }).every((v) => v == null);
     if (none) throw new Error('empty');
-    return { fundamentals: { ...d, asOf: iso(r.at), source: FUND_SOURCE, delayMinutes: null }, note: r.stale ? (lang === 'hi' ? 'ताज़ा आँकड़े नहीं मिले; पुराने आँकड़े दिखाए गए हैं (asOf देखें)।' : 'Fresh numbers could not be loaded; showing older numbers (see asOf).') : null };
+    return { fundamentals: { ...d, asOf: iso(r.at), source: d.source ?? FUND_SOURCE, delayMinutes: null }, note: r.stale ? (lang === 'hi' ? 'ताज़ा आँकड़े नहीं मिले; पुराने आँकड़े दिखाए गए हैं (asOf देखें)।' : 'Fresh numbers could not be loaded; showing older numbers (see asOf).') : null };
   } catch {
     return { fundamentals: null, note: lang === 'hi' ? 'कंपनी के आँकड़े (P/E, ROE, कर्ज़) अभी नहीं मिल पाए, इसलिए सिर्फ़ भाव की चाल दिखाई गई है।' : 'Company numbers (P/E, ROE, debt) could not be loaded right now, so only price behaviour is shown.' };
   }

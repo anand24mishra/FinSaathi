@@ -55,6 +55,7 @@ export function parseScreener(html: string): FundamentalsRaw {
     dividendYieldPct: top.get('Dividend Yield') ?? null, epsTtm: last(pl.get('EPS in Rs')),
     revenueGrowthPct: last(pl.get('Sales growth')), profitMarginPct: sales && profit != null ? r2((profit / sales) * 100) : null,
     sector: broad ? broad.replace(/&amp;/g, '&') : null, industry: industry ? industry.replace(/&amp;/g, '&') : null,
+    source: 'Screener.in company data (unofficial)',
   };
   if (Object.entries(out).every(([k, v]) => k === 'sector' || k === 'industry' || v == null)) throw new Error('Screener: no usable numbers');
   return out;

@@ -16,5 +16,7 @@ export interface FundamentalsRaw {
   marketCapCr: number | null; pe: number | null; pb: number | null; roePct: number | null;
   debtToEquity: number | null; dividendYieldPct: number | null; epsTtm: number | null;
   revenueGrowthPct: number | null; profitMarginPct: number | null; sector: string | null; industry: string | null;
+  /** Which site supplied these numbers (set by the provider); the API labels the data with it. */
+  source?: string;
 }
 export interface FundamentalsProvider { fundamentals(symbol: string): Promise<FundamentalsRaw> }
