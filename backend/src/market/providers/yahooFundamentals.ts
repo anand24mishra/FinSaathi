@@ -2,6 +2,8 @@
 import { getJson, httpFetch, TtlCache, TTL, Limiter } from '../http';
 import type { FundamentalsRaw } from './types';
 import { YAHOO_UA } from './yahoo';
+import { fetchScreener } from './screener';
+import { reportService } from '../../core/health';
 
 const limiter = new Limiter(3);
 let session: { cookie: string; crumb: string; at: number } | null = null;
@@ -50,7 +52,15 @@ async function fetchSummary(symbol: string, retry = true): Promise<FundamentalsR
   }
 }
 
-let impl: (symbol: string) => Promise<FundamentalsRaw> = (s) => fetchSummary(s);
+/** Screener.in first (works from cloud hosts), Yahoo as the fallback (works from home networks). */
+async function fetchBest(symbol: string): Promise<FundamentalsRaw> {
+  try { const r = await fetchScreener(symbol); reportService('fundamentals', true, 'screener.in'); return r; }
+  catch (e1) {
+    try { const r = await fetchSummary(symbol); reportService('fundamentals', true, 'yahoo (screener.in failed)'); return r; }
+    catch (e2) { reportService('fundamentals', false, `screener: ${(e1 as Error)?.message}; yahoo: ${(e2 as Error)?.message}`.slice(0, 190)); throw e2; }
+  }
+}
+let impl: (symbol: string) => Promise<FundamentalsRaw> = (s) => fetchBest(s);
 export const setFundamentalsImpl = (f: (symbol: string) => Promise<FundamentalsRaw>) => { impl = f; cache.clear(); };
 const cache = new TtlCache<FundamentalsRaw>(TTL.fundamentals, 48 * 3600_000);
 export async function getFundamentalsRaw(symbol: string): Promise<{ data: FundamentalsRaw; at: number; stale: boolean }> {
