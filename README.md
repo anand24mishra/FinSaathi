@@ -132,3 +132,10 @@ FinSaathi implements strict financial compliance guardrails:
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Render free tier: always on
+Render's free web services sleep after 15 minutes without inbound traffic (cold start ~1 min, and the live market cache stops).
+Two free pingers keep ours awake: `backend/src/core/keepAlive.ts` (pings its own `RENDER_EXTERNAL_URL/v1/health` every 10 min; set
+`KEEPALIVE=off` to disable, or `KEEPALIVE_HOURS_IST=06-24` to let it sleep overnight) and `.github/workflows/keep-alive.yml` (GitHub Actions cron,
+free on public repos; it can also wake the service). One always-on service uses at most 744 of the workspace's 750 free hours per month, so keep it
+the only free service in that Render workspace, or two of them will exhaust the pool and Render suspends all free services until next month.
