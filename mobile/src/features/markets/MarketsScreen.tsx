@@ -10,10 +10,9 @@ import { MoversTab } from './MoversTab';
 import { IposTab } from './IposTab';
 import { FundsTab } from './FundsTab';
 import { BeyondTab } from './BeyondTab';
-import { NewsTab } from './NewsTab';
 
-type Tab = 'stocks' | 'movers' | 'ipos' | 'funds' | 'beyond' | 'news';
-const TABS: Tab[] = ['stocks', 'movers', 'ipos', 'funds', 'beyond', 'news'];
+type Tab = 'stocks' | 'movers' | 'ipos' | 'funds' | 'beyond';
+const TABS: Tab[] = ['stocks', 'movers', 'ipos', 'funds', 'beyond'];
 
 export function MarketsScreen() {
   const t = useT();
@@ -26,7 +25,7 @@ export function MarketsScreen() {
       <View style={{ marginTop: space.lg }}>
         <Segmented<Tab> label={t('markets.sections')} value={tab} onChange={setTab} options={TABS.map((x) => ({ value: x, label: t(`markets.${x}` as never) }))} />
       </View>
-      {tab === 'stocks' ? <StocksTab /> : tab === 'movers' ? <MoversTab /> : tab === 'ipos' ? <IposTab /> : tab === 'funds' ? <FundsTab /> : tab === 'beyond' ? <BeyondTab /> : <NewsTab />}
+      {tab === 'stocks' ? <StocksTab /> : tab === 'movers' ? <MoversTab /> : tab === 'ipos' ? <IposTab /> : tab === 'funds' ? <FundsTab /> : <BeyondTab />}
     </Screen>
   );
 }

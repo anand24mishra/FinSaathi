@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from 'react';
-import { Linking, View } from 'react-native';
+import { Linking, Pressable, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Landmark, ShieldCheck } from 'lucide-react-native';
 import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
 import { Button } from '@/components/Button';
@@ -108,18 +109,12 @@ function Social() {
                 <Text v="small" weight="semibold" tone={b.sentimentScore >= 15 ? 'gain' : b.sentimentScore <= -15 ? 'loss' : 'ink'}>{b.name} · {t('home.mentions', { n: b.mentions })}</Text>
               </View>))}</Cluster>
           </>) : null}
-          {[...h.news.slice(0, 3).map((n) => ({ id: n.id, title: n.title, url: n.url, meta: n.source, at: n.publishedAt, s: n.sentiment })),
-            ...h.social.slice(0, 3).map((p) => ({ id: p.id, title: p.title, url: p.url, meta: p.community ?? (p.origin === 'x' ? 'X' : p.origin === 'telegram' ? 'Telegram' : 'Reddit'), at: p.publishedAt, s: p.sentiment }))].map((it, i, arr) => (
-            <View key={it.id} style={{ gap: 4, paddingBottom: space.md, borderBottomWidth: i === arr.length - 1 ? 0 : 1, borderBottomColor: colors.line }}>
-              <Text v="body" weight="semibold" accessibilityRole="link" onPress={() => Linking.openURL(it.url).catch(() => {})}>{it.title}</Text>
-              <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center', flexWrap: 'wrap' }}><SentimentTag s={it.s} /><Text v="small" tone="soft">{it.meta} · {timeAgo(it.at, lang)}</Text></View>
-            </View>))}
-          <Cluster>{h.sources.map((s) => (
-            <View key={s.id} style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
-              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: s.status === 'live' ? colors.gain : s.status === 'not_configured' ? colors.inkSoft : colors.loss }} />
-              <Text v="small" tone="soft">{s.name}: {status(s.status)}</Text>
-            </View>))}</Cluster>
-          <Button label={t('home.seeNews')} variant="secondary" onPress={() => router.navigate({ pathname: '/markets', params: { tab: 'news' } })} />
+          {h.news.slice(0, 4).map((n, i, arr) => (
+            <Pressable key={n.id} onPress={() => router.navigate('/news')} accessibilityRole="button" accessibilityLabel={n.title} style={{ gap: 4, paddingBottom: space.md, borderBottomWidth: i === arr.length - 1 ? 0 : 1, borderBottomColor: colors.line }}>
+              <Text v="body" weight="semibold">{n.title}</Text>
+              <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center', flexWrap: 'wrap' }}><SentimentTag s={n.sentiment} /><Text v="small" tone="soft">{n.source} · {timeAgo(n.publishedAt, lang)}</Text></View>
+            </Pressable>))}
+          <Button label={t('home.seeNews')} variant="secondary" onPress={() => router.navigate('/news')} />
         </>)}
       </Async>
     </Panel>
@@ -127,7 +122,7 @@ function Social() {
 }
 
 export function HomeScreen() {
-  const { lang, user } = useApp(); const t = useT(); const { isDesktop } = useLayout();
+  const { lang, user } = useApp(); const t = useT(); const { isDesktop } = useLayout(); const router = useRouter(); const { colors } = useTheme();
   const overview = useApi<MarketOverview>(withLang('/market/overview', lang), { pollMs: 60000 });
   const refetch = useCallback(() => { overview.refetch(); }, [overview]);
   const h = new Date().getHours();
@@ -143,6 +138,24 @@ export function HomeScreen() {
       </Reveal>
       <View style={{ marginTop: space.xl, gap: space.xl }}>
         <Async q={overview} skeleton={<SkeletonBlock lines={3} />}>{(o) => <Pulse o={o} />}</Async>
+        <Pressable onPress={() => router.navigate({ pathname: '/ask', params: { q: t('ask.tip') } })} accessibilityRole="button" accessibilityLabel={t('home.tipCard')} accessibilityHint={t('home.tipBody')}>
+          <Panel style={{ gap: 4, borderRadius: radius.lg, padding: space.xl, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.primarySoft, borderColor: colors.primarySoft }}>
+            <View style={{ flex: 1, gap: 4 }}>
+              <Text v="h3">{t('home.tipCard')}</Text>
+              <Text v="body">{t('home.tipBody')}</Text>
+            </View>
+            <ShieldCheck size={30} color={colors.primary} />
+          </Panel>
+        </Pressable>
+        <Pressable onPress={() => router.navigate('/plan')} accessibilityRole="button" accessibilityLabel={t('home.planCard')} accessibilityHint={t('home.planBody')}>
+          <Panel style={{ gap: 4, borderRadius: radius.lg, padding: space.xl, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <View style={{ flex: 1, gap: 4 }}>
+              <Text v="h3">{t('home.planCard')}</Text>
+              <Text v="body" tone="soft">{t('home.planBody')}</Text>
+            </View>
+            <Landmark size={28} color={colors.primary} />
+          </Panel>
+        </Pressable>
         <View style={{ flexDirection: isDesktop ? 'row' : 'column', gap: space.xl, alignItems: 'flex-start' }}>
           <View style={{ flex: isDesktop ? 3 : undefined, width: isDesktop ? undefined : '100%' }}><Calls /></View>
           <View style={{ flex: isDesktop ? 2 : undefined, width: isDesktop ? undefined : '100%', gap: space.xl }}><Note o={overview} /><Social /></View>

@@ -2,7 +2,7 @@ import React from 'react';
 import { Pressable, View } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { CalendarDays, Landmark, MessageCircleQuestion, TrendingUp, Wallet, type LucideIcon } from 'lucide-react-native';
+import { CalendarDays, MessageCircleQuestion, Newspaper, TrendingUp, Wallet, type LucideIcon } from 'lucide-react-native';
 import { Text } from './Text';
 import { useLayout } from './Layout';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -12,15 +12,16 @@ import { useT, type Key } from '@/i18n';
 export const TABS: { name: string; key: Key; icon: LucideIcon }[] = [
   { name: 'index', key: 'tab.today', icon: CalendarDays },
   { name: 'markets', key: 'tab.markets', icon: TrendingUp },
-  { name: 'plan', key: 'tab.plan', icon: Landmark },
+  { name: 'news', key: 'tab.news', icon: Newspaper },
   { name: 'portfolio', key: 'tab.portfolio', icon: Wallet },
   { name: 'ask', key: 'tab.ask', icon: MessageCircleQuestion },
 ];
-export const ROUTE: Record<string, string> = { index: '/', markets: '/markets', plan: '/plan', portfolio: '/portfolio', ask: '/ask' };
+export const ROUTE: Record<string, string> = { index: '/', markets: '/markets', news: '/news', portfolio: '/portfolio', ask: '/ask' };
 function activeTab(path: string): string {
   if (path === '/' || path === '') return 'index';
   const seg = path.split('/')[1];
   if (seg === 'stock' || seg === 'fund') return 'markets';
+  if (seg === 'plan') return 'index';
   return ROUTE[seg] ? seg : '';
 }
 

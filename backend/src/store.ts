@@ -1,7 +1,7 @@
 // MongoDB (Atlas free tier) persistence. Render's free disk is wiped on every deploy/restart, so accounts and portfolios live here.
 // One shared client for the process. Documents use our own string ids as _id.
 import { MongoClient, type Collection, type Db } from 'mongodb';
-import type { Profile } from '../../shared/contract';
+import type { ChatMessage, Profile } from '../../shared/contract';
 
 export interface UserDoc {
   _id: string; name: string; email: string; pw_salt: string; pw_hash: string; profile: Profile;
@@ -14,6 +14,7 @@ export interface HoldingDoc {
 export interface AlertDoc {
   _id: string; user_id: string; dedupe_key: string; kind: string; severity: string; title: unknown; body: unknown; created_at: string; read: boolean; pushed: boolean;
 }
+export interface ConversationDoc { _id: string; user_id: string; title: string; created_at: string; updated_at: string; messages: ChatMessage[] }
 export interface TelegramLinkDoc { _id: string; chat_id: string; linked_at: string }            // _id = user id
 export interface TelegramCodeDoc { _id: string; user_id: string; expires_at: number; created_at: string }   // _id = sha256(code)
 
@@ -34,6 +35,7 @@ export async function initStore(uri: string | undefined = process.env.MONGODB_UR
     holdings().createIndex({ user_id: 1, created_at: 1 }),
     alerts().createIndex({ user_id: 1, dedupe_key: 1 }, { unique: true }),
     alerts().createIndex({ user_id: 1, created_at: -1 }),
+    conversations().createIndex({ user_id: 1, updated_at: -1 }),
     telegramLinks().createIndex({ chat_id: 1 }, { unique: true }),
     telegramCodes().createIndex({ user_id: 1 }),
   ]);
@@ -49,6 +51,7 @@ const need = (): Db => { if (!db) throw new Error('Store is not initialised; cal
 export const users = (): Collection<UserDoc> => need().collection<UserDoc>('users');
 export const holdings = (): Collection<HoldingDoc> => need().collection<HoldingDoc>('holdings');
 export const alerts = (): Collection<AlertDoc> => need().collection<AlertDoc>('alerts');
+export const conversations = (): Collection<ConversationDoc> => need().collection<ConversationDoc>('conversations');
 export const telegramLinks = (): Collection<TelegramLinkDoc> => need().collection<TelegramLinkDoc>('telegram_links');
 export const telegramCodes = (): Collection<TelegramCodeDoc> => need().collection<TelegramCodeDoc>('telegram_link_codes');
 

@@ -3,10 +3,10 @@
     "name": "FinSaathi · फ़िनसाथी",
     "slug": "finsaathi",
     "scheme": "finsaathi",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true
     },
@@ -15,7 +15,8 @@
         "backgroundColor": "#1747C7",
         "foregroundImage": "./assets/android-icon-foreground.png"
       },
-      "package": "com.finsaathi.app"
+      "package": "com.finsaathi.app",
+      "versionCode": 2
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -29,7 +30,9 @@
       "expo-secure-store",
       "expo-notifications",
       "@react-native-google-signin/google-signin",
-      "./plugins/withReleaseSigning"
+      "./plugins/withReleaseSigning",
+      ["expo-audio", { "microphonePermission": "FinSaathi needs the microphone so you can ask questions by voice. / आवाज़ से सवाल पूछने के लिए FinSaathi को माइक चाहिए।" }],
+      "expo-web-browser"
     ]
   }
 }

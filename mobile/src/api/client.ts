@@ -58,7 +58,7 @@ export function setAuthToken(t: string | null) { authToken = t; }
 export function getAuthToken() { return authToken; }
 export function setUnauthorizedHandler(fn: (() => void) | null) { onUnauthorized = fn; }
 
-type Opts = { method?: 'GET' | 'POST' | 'PUT' | 'DELETE'; body?: unknown; query?: Record<string, string | number | undefined | null>; timeoutMs?: number; retries?: number; signal?: AbortSignal };
+type Opts = { method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; body?: unknown; query?: Record<string, string | number | undefined | null>; timeoutMs?: number; retries?: number; signal?: AbortSignal };
 
 export function buildUrl(path: string, query?: Opts['query']): string {
   const p = path.startsWith('/v1') ? path : PREFIX + (path.startsWith('/') ? path : '/' + path);
@@ -113,6 +113,7 @@ export const api = {
   get: <T>(path: string, query?: Opts['query'], o?: Opts) => request<T>(path, { ...o, query }),
   post: <T>(path: string, body?: unknown, o?: Opts) => request<T>(path, { ...o, method: 'POST', body: body ?? {} }),
   put: <T>(path: string, body?: unknown, o?: Opts) => request<T>(path, { ...o, method: 'PUT', body }),
+  patch: <T>(path: string, body?: unknown, o?: Opts) => request<T>(path, { ...o, method: 'PATCH', body }),
   del: <T>(path: string, o?: Opts) => request<T>(path, { ...o, method: 'DELETE' }),
 };
 

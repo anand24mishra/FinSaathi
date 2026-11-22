@@ -50,7 +50,7 @@ export function Screen({ title, subtitle, children, topBar = true, back, onRefre
           {title ? (
             <View style={{ marginTop: back ? 0 : space.xl, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: space.md, flexWrap: 'wrap' }}>
               <View style={{ flex: 1, minWidth: 200 }}>
-                <Text v="h1" accessibilityRole="header">{title}</Text>
+                <Text v={title.length > 36 ? 'h2' : 'h1'} accessibilityRole="header">{title}</Text>
                 {subtitle ? <Text v="body" tone="soft" style={{ marginTop: 4 }}>{subtitle}</Text> : null}
               </View>
               {headerRight}

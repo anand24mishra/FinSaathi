@@ -5,7 +5,7 @@ import type { Lang } from '../../../../shared/contract';
 
 const limiter = new Limiter(3);
 export const NEWS_SOURCE = 'Google News RSS';
-export interface RawNews { title: string; url: string; publishedAt: string; publisher: string; lang: Lang }
+export interface RawNews { title: string; url: string; publishedAt: string; publisher: string; lang: Lang; id?: string; summary?: string; body?: string }
 
 export function parseRss(xml: string, lang: Lang): RawNews[] {
   const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_', textNodeName: '#text' });

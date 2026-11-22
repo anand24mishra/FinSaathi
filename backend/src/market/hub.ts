@@ -7,7 +7,6 @@ import { NEWS_SOURCE } from './providers/googleNews';
 import { fetchRssFeeds } from './providers/rssFeeds';
 import { fetchReddit } from './providers/reddit';
 import { fetchX } from './providers/x';
-import { fetchTelegram } from './providers/telegram';
 import { refStock } from './reference/nifty50';
 import { TtlCache, iso } from './http';
 
@@ -35,7 +34,7 @@ export function computeBuzz(news: NewsItem[], social: SocialPost[], limit = 10):
 }
 
 async function build(lang: Lang): Promise<NewsHub> {
-  const [g, rss, reddit, x, tg] = await Promise.allSettled([getNews(lang, 'market'), fetchRssFeeds(lang), fetchReddit(), fetchX(), fetchTelegram()]);
+  const [g, rss, reddit, x] = await Promise.allSettled([getNews(lang, 'market'), fetchRssFeeds(lang), fetchReddit(), fetchX()]);
   const sources: SourceStatus[] = [];
   const all: NewsItem[] = [];
 
@@ -52,12 +51,9 @@ async function build(lang: Lang): Promise<NewsHub> {
   else sources.push(down('reddit', 'Reddit', 'reddit', reddit.reason));
   if (x.status === 'fulfilled') { social.push(...x.value.posts); sources.push(x.value.status); }
   else sources.push(down('x', 'X (Twitter)', 'x', x.reason));
-  // Telegram: allow-listed public news/official channels only; shown as unverified chatter, tip-like posts already filtered.
-  if (tg.status === 'fulfilled') { social.push(...tg.value.posts); sources.push(...tg.value.statuses); }
-  else sources.push(down('telegram', 'Telegram channels', 'telegram', tg.reason));
   const socialSorted = dedupe(social.sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))).slice(0, 40);
 
-  for (const [name, origin] of [['news-rss', 'news'], ['reddit', 'reddit'], ['x', 'x'], ['telegram', 'telegram']] as const) {
+  for (const [name, origin] of [['news-rss', 'news'], ['reddit', 'reddit'], ['x', 'x']] as const) {
     const s = sources.filter((q) => q.origin === origin && (origin !== 'news' || q.id !== 'google-news'));
     if (!s.length) continue;
     const live = s.filter((q) => q.status === 'live').length;

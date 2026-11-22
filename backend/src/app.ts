@@ -34,7 +34,7 @@ export async function buildApp(opts: BuildOptions = {}): Promise<FastifyInstance
 
   await app.register(cors, {
     origin: (origin, cb) => cb(null, isAllowedOrigin(origin)),
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['authorization', 'content-type'],
     maxAge: 600,
   });

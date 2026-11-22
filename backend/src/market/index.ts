@@ -6,11 +6,16 @@ import { DataError, getSeries, listStocks, getStockDetail, getAnalysis, getDaily
 import { getMarketOverview } from './overview';
 import { getNews } from './news';
 import { getNewsHub } from './hub';
+import { getNewsChannel } from './newsChannels';
 import { getIpoFeed } from './ipo';
+import { getIpoGuide } from './ipoGuide';
 import { searchFunds, getFundDetail, runSipSim } from './funds';
 import { getAlternatives } from './alternatives';
 import { getBriefing } from './briefing';
 import { chat } from '../ai/assistant';
+import { geminiTranscribe } from '../ai/llm';
+import { detectStyle } from '../ai/lang';
+import { deleteConversation, getConversation, importLocal, listConversations, renameConversation } from '../ai/conversations';
 import { getProfile } from '../core/users';
 import { RANGES } from './data';
 import { isWhitelisted } from './reference/nifty50';
@@ -37,7 +42,10 @@ const wrap = <Q = any>(fn: (req: FastifyRequest<{ Querystring: Q; Params: any; B
 
 const langQ = z.object({ lang: z.enum(['en', 'hi']).optional() });
 const sipBody = z.object({ schemeCode: z.number().int().positive(), monthly: z.number().min(100).max(10_000_000), years: z.number().int().min(1).max(30), lang: z.enum(['en', 'hi']).optional() });
-const chatBody = z.object({ message: z.string().min(1).max(1000), lang: z.enum(['en', 'hi']).default('en'), history: z.array(z.object({ role: z.enum(['user', 'assistant']), text: z.string().max(2000) })).max(20).optional() });
+const AUDIO_TYPES = ['audio/aac', 'audio/mp4', 'audio/mpeg', 'audio/wav', 'audio/webm', 'audio/ogg'] as const;
+const voiceBody = z.object({ audio: z.string().min(100).max(8_500_000), mimeType: z.enum(AUDIO_TYPES), conversationId: z.string().min(1).max(64).optional(), lang: z.enum(['en', 'hi']).default('en') });
+const importBody = z.object({ messages: z.array(z.object({ role: z.enum(['user', 'assistant']), text: z.string().max(4000) })).max(200) });
+const chatBody = z.object({ message: z.string().min(1).max(1000), lang: z.enum(['en', 'hi']).default('en'), conversationId: z.string().min(1).max(64).optional(), history: z.array(z.object({ role: z.enum(['user', 'assistant']), text: z.string().max(2000) })).max(20).optional() });
 
 export const marketPlugin: FastifyPluginAsync = async (app) => {
   app.get('/market/overview', wrap(async (req) => getMarketOverview(await langOf(req, langQ.parse(req.query).lang))));
@@ -68,10 +76,15 @@ export const marketPlugin: FastifyPluginAsync = async (app) => {
   app.get('/ideas/daily', wrap(async (req) => getDailyIdeas(await langOf(req, langQ.parse(req.query).lang))));
 
   app.get('/news', wrap(async (req) => {
-    const q = z.object({ lang: z.enum(['en', 'hi']).optional(), topic: z.enum(['market', 'economy', 'stocks', 'ipo', 'gold']).default('market') }).parse(req.query);
+    const q = z.object({ lang: z.enum(['en', 'hi']).optional(), topic: z.enum(['market', 'economy', 'stocks', 'ipo', 'gold', 'funds']).default('market') }).parse(req.query);
     return getNews(await langOf(req, q.lang), q.topic);
   }));
+  app.get('/news/channel', wrap(async (req) => {
+    const q = z.object({ lang: z.enum(['en', 'hi']).optional(), id: z.string().max(20).optional() }).parse(req.query);
+    return getNewsChannel(await langOf(req, q.lang), q.id ?? 'all');
+  }));
   app.get('/news/hub', wrap(async (req) => getNewsHub(await langOf(req, langQ.parse(req.query).lang))));
+  app.get('/ipos/guide', wrap(async (req) => getIpoGuide(await langOf(req, langQ.parse(req.query).lang))));
   app.get('/ipos', wrap(async (req) => getIpoFeed(await langOf(req, langQ.parse(req.query).lang))));
 
   app.get('/funds/search', wrap(async (req) => searchFunds(z.object({ q: z.string().max(80).default('') }).parse(req.query).q)));
@@ -92,6 +105,39 @@ export const marketPlugin: FastifyPluginAsync = async (app) => {
     const b = chatBody.safeParse(req.body);
     if (!b.success) return reply.code(400).send(errBody('bad_request', 'message (1 to 1000 characters) is required', false));
     return chat(userId(req), b.data);
+  }));
+
+  // Voice: audio -> Gemini transcript (+ detected Hindi/Hinglish/English) -> the same chat pipeline.
+  app.post('/assistant/voice', { bodyLimit: 8 * 1024 * 1024 }, wrap(async (req, reply) => {
+    const b = voiceBody.safeParse(req.body);
+    if (!b.success) return reply.code(400).send(errBody('bad_request', 'audio (base64, up to about 6 MB) and a supported mimeType are required', false));
+    const audio = Buffer.from(b.data.audio, 'base64');
+    if (audio.length < 200) return reply.code(422).send(errBody('no_speech', 'We could not hear anything. Please try again. / कुछ सुनाई नहीं दिया, कृपया फिर कोशिश करें।', false));
+    const t = await geminiTranscribe(audio, b.data.mimeType);
+    if (!t) return reply.code(503).send(errBody('voice_unavailable', 'Voice is not available right now. Please type your question. / अभी आवाज़ उपलब्ध नहीं है, कृपया लिखकर पूछें।', true));
+    if (!t.transcript) return reply.code(422).send(errBody('no_speech', 'We could not hear that clearly. Please try again. / साफ़ सुनाई नहीं दिया, कृपया फिर कोशिश करें।', false));
+    // Trust the script we can see over the model's label (a Devanagari transcript is Hindi; Latin Hindi words are Hinglish).
+    const style = detectStyle(t.transcript) === 'en' && t.style !== 'en' ? t.style : detectStyle(t.transcript);
+    const res = await chat(userId(req), { message: t.transcript, lang: b.data.lang, style, conversationId: b.data.conversationId }, { viaVoice: true });
+    return { ...res, transcript: t.transcript };
+  }));
+
+  // Saved chats
+  app.get('/assistant/conversations', wrap(async (req) => listConversations(userId(req))));
+  app.get('/assistant/conversations/:id', wrap(async (req, reply) => {
+    const c = await getConversation(userId(req), String((req.params as any).id));
+    return c ?? reply.code(404).send(errBody('not_found', 'Conversation not found', false));
+  }));
+  app.patch('/assistant/conversations/:id', wrap(async (req, reply) => {
+    const b = z.object({ title: z.string().min(1).max(100) }).safeParse(req.body);
+    if (!b.success) return reply.code(400).send(errBody('bad_request', 'title is required', false));
+    return (await renameConversation(userId(req), String((req.params as any).id), b.data.title)) ? { ok: true } : reply.code(404).send(errBody('not_found', 'Conversation not found', false));
+  }));
+  app.delete('/assistant/conversations/:id', wrap(async (req, reply) => (await deleteConversation(userId(req), String((req.params as any).id))) ? { ok: true } : reply.code(404).send(errBody('not_found', 'Conversation not found', false))));
+  app.post('/assistant/conversations/import', wrap(async (req, reply) => {
+    const b = importBody.safeParse(req.body);
+    if (!b.success) return reply.code(400).send(errBody('bad_request', 'messages[] is required', false));
+    return { id: await importLocal(userId(req), b.data.messages) };
   }));
 };
 export { marketPlugin as default };

@@ -151,6 +151,8 @@ export interface IpoItem {
   subscription: { total: number | null; retail: number | null; qib: number | null; nii: number | null } | null;
   listingGainPct: number | null; checks: IpoCheck[]; summary: string;
 }
+export interface IpoGuide { asOf: string; lang: Lang; note: string; sections: { id: string; title: string; steps: string[]; tip?: string }[] }
+// GET /v1/ipos/guide?lang= -> IpoGuide
 export interface IpoFeed extends Sourced {
   available: boolean; note: string; items: IpoItem[];
   gmpNote: string; // explains why grey-market premium is not shown as advice
@@ -163,9 +165,14 @@ export interface NewsItem {
   id: string; title: string; source: string; url: string; publishedAt: ISO; lang: Lang;
   sentiment: 'positive' | 'neutral' | 'negative'; sentimentMethod: string;
   explanation: string; affectedSymbols: string[]; impact: string | null;
+  channel?: NewsChannelId;        // which News channel it belongs to
+  summary?: string;               // short description from the publisher feed (HTML stripped)
+  body?: string;                  // full text when the item is readable in the app itself (url may then be '')
 }
+export type NewsChannelId = 'all' | 'markets' | 'stocks' | 'economy' | 'ipo' | 'funds' | 'gold';
 export interface NewsFeed { asOf: ISO; lang: Lang; items: NewsItem[]; source: string }
-// GET /v1/news?lang=&topic=market|economy|stocks|ipo|gold -> NewsFeed
+// GET /v1/news?lang=&topic=market|economy|stocks|ipo|gold|funds -> NewsFeed
+// GET /v1/news/channel?lang=&id=all|markets|stocks|economy|ipo|funds|gold -> NewsFeed  (every source merged; nothing opens another app)
 
 // ---------- Funds & beyond stocks ----------
 export interface FundSummary { schemeCode: number; name: string }
@@ -210,12 +217,22 @@ export interface PortfolioHealth {
 // GET /v1/portfolio/health?lang= -> PortfolioHealth
 
 // ---------- Assistant ----------
-export interface ChatRequest { message: string; lang: Lang; history?: { role: 'user' | 'assistant'; text: string }[] }
+export type ReplyStyle = 'hi' | 'hinglish' | 'en';
+export interface ChatRequest { message: string; lang: Lang; history?: { role: 'user' | 'assistant'; text: string }[]; style?: ReplyStyle; conversationId?: string }
 export interface Citation { label: string; ref: string; asOf: ISO | null }
 export interface ChatResponse {
   answer: string; citations: Citation[]; toolsUsed: string[]; refused: boolean; followUps: string[];
   generatedBy: 'rules' | 'llm'; disclaimer: string;
+  style?: ReplyStyle; conversationId?: string; transcript?: string;
 }
+export interface ChatMessage {
+  id: string; role: 'user' | 'assistant'; text: string; at: string; style?: ReplyStyle; viaVoice?: boolean;
+  citations?: Citation[]; followUps?: string[]; refused?: boolean; disclaimer?: string;
+}
+export interface ConversationSummary { id: string; title: string; updatedAt: string; preview: string }
+export interface Conversation { id: string; title: string; createdAt: string; updatedAt: string; messages: ChatMessage[] }
+// GET /v1/assistant/conversations -> ConversationSummary[]; GET/PATCH/DELETE /v1/assistant/conversations/:id
+// POST /v1/assistant/voice { audio: base64, mimeType, conversationId? } -> ChatResponse (with transcript)
 // POST /v1/assistant/chat ChatRequest -> ChatResponse
 // Behaviour: answers ONLY from data fetched by internal tools (quotes, analysis, portfolio, education, news). If data missing: say so. Refuses "guaranteed returns"/insider/tip-style requests.
 

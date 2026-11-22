@@ -1,7 +1,7 @@
 // FinSaathi assistant: NOT a generic chatbot. An intent router over our own tools (quotes, analysis, portfolio, news, IPO,
 // education). Every answer is composed from tool output with citations; missing data is stated plainly. Works fully
 // without an LLM key ('rules'); with a key, an LLM may phrase the answer via tool-calling under the same guardrails.
-import type { CallAction, ChatRequest, ChatResponse, Citation, Lang, StockCall } from '../../../shared/contract';
+import type { CallAction, ChatMessage, ChatRequest, ChatResponse, Citation, Lang, ReplyStyle, StockCall } from '../../../shared/contract';
 import { DISCLAIMER } from '../../../shared/contract';
 import { NIFTY50, type RefStock } from '../market/reference/nifty50';
 import { asciiDigits, inr, lakhCrore, spct } from '../market/format';
@@ -11,13 +11,21 @@ import { getCallsFeed, getStockCall } from '../market/analysis/calls';
 import { getMarketOverview } from '../market/overview';
 import { getNews } from '../market/news';
 import { getIpoFeed } from '../market/ipo';
+import { ipoGuideText } from '../market/ipoGuide';
 import { getAlternatives } from '../market/alternatives';
 import { getProfile } from '../core/users';
 import { getPortfolioView, getPortfolioHealth } from '../core/portfolio';
 import { searchTerms } from '../core/education';
 import { llmConfigured, llmCall, textOf } from './llm';
 import { AllowedNumbers, validateNarrative } from './guardrails';
+import { detectStyle, styleToLang, STYLE_INSTRUCTION } from './lang';
+import { appendTurn, recentHistory } from './conversations';
+import { isTip, tipChecklist } from './tipCheck';
+import { randomUUID } from 'node:crypto';
 import type { Term } from '../../../shared/contract';
+
+/** The app shows plain text, so model-written markdown (bold, headings, "* " bullets) would appear as stray symbols. */
+export const plain = (s: string): string => s.replace(/\*\*(.+?)\*\*/gs, '$1').replace(/__(.+?)__/gs, '$1').replace(/^\s{0,3}#{1,6}\s+/gm, '').replace(/^(\s*)[*-]\s+/gm, '$1• ').replace(/`/g, '').trim();
 
 const nukta = (s: string) => s.replace(/़/g, '');
 export const norm = (s: string) => nukta(asciiDigits(s)).toLowerCase().replace(/[“”"'`’]/g, '').replace(/\s+/g, ' ').trim();
@@ -81,6 +89,7 @@ const PORTFOLIOWORDS = /(my portfolio|my holdings|my shares|my stocks|my investm
 const PLANWORDS = /(where (should|can|do) i (invest|put)|where to invest|how (should|do) i invest|kahan (invest|nivesh)|कहाँ (निवेश|लगाऊँ|लगाऊं|लगाएँ|लगाएं)|कहां (निवेश|लगाऊँ|लगाऊं|लगाएँ|लगाएं)|कहाँ लगा|कैसे निवेश|क्या करूँ इस पैसे|invest (₹|rs\.?|rupees)?\s*[\d,]+)/;
 const CALLSWORDS = /(what (should|to) (i )?(buy|sell|avoid)|which (stock|share)s?|stocks? (to|for) (buy|sell|avoid|invest)|shares? (to|for) (buy|sell|avoid)|top (picks?|stocks?|calls?)|best (stock|share)s?|(buy|sell|avoid) today|today'?s calls?|any (buy|sell) calls?|rising stars?|worth (buying|selling)|कौन ?(सा|से) (शेयर|स्टॉक)|क्या (ख़रीदूँ|खरीदूँ|खरीदूं|ख़रीदूं|बेचूँ|बेचूं|खरीदें|ख़रीदें)|(ख़रीदने|खरीदने|बेचने) (लायक|के लिए)|आज की राय|टॉप (शेयर|स्टॉक)|उभरते सितारे)/;
 const IPOWORDS = /(\bipo\b|आईपीओ|आई पी ओ)/;
+const IPOHOW = /(apply|application|allot|kaise|kese|kaisa|how|process|guide|steps?|check|look|dekh|samjh|tarika|sikh|learn|sme|gmp|तरीका|कैसे|आवेदन|अप्लाई|आवंटन|समझ|देखें|सीख)/;
 
 export function parseAmount(text: string): number | null {
   const t = asciiDigits(text).toLowerCase().replace(/,/g, '');
@@ -208,6 +217,19 @@ async function newsAnswer(msg: string, lang: Lang): Promise<Draft> {
   } catch { return { answer: unavailable(lang, lang === 'en' ? 'News' : 'ख़बरें'), citations: [], toolsUsed: ['news'], kind: 'news' }; }
 }
 
+function guideSection(t: string): string | undefined {
+  if (/sme/.test(t)) return 'sme';
+  if (/gmp|scam|fraud|thag|ठग|धोखा/.test(t)) return 'scams';
+  if (/allot|आवंटन/.test(t)) return 'allotment';
+  if (/look|check|read|dekh|risk|safe|judge|परख|देखें|जोखिम/.test(t)) return 'read';
+  if (/listing|list hoga|लिस्टिंग/.test(t)) return 'listing';
+  return 'apply';
+}
+function ipoGuideAnswer(msg: string, lang: Lang): Draft {
+  const id = guideSection(norm(msg));
+  const more = lang === 'hi' ? '\nपूरी गाइड: बाज़ार → IPO → "IPO गाइड"।' : '\nFull guide: Markets → IPO → "IPO guide".';
+  return { answer: ipoGuideText(lang, id) + more, citations: [{ label: 'FinSaathi IPO guide', ref: '/markets?tab=ipos', asOf: null }], toolsUsed: ['ipoGuide'], kind: 'ipo' };
+}
 async function ipoAnswer(lang: Lang): Promise<Draft> {
   const f = await getIpoFeed(lang); const en = lang === 'en';
   const active = f.items.filter((i) => i.status === 'open' || i.status === 'upcoming').slice(0, 5);
@@ -286,6 +308,7 @@ export async function rulesChat(userId: string, req: ChatRequest): Promise<Draft
   if (PLANWORDS.test(t) && !stock) return planAnswer(userId, msg, lang);
   if (stock && !(meaning && term)) return stockAnswer(msg, stock, lang);
   if (CALLSWORDS.test(t) && !stock) return callsAnswer(lang);
+  if (IPOWORDS.test(t) && IPOHOW.test(t)) return ipoGuideAnswer(msg, lang);
   if (IPOWORDS.test(t)) return ipoAnswer(lang);
   if (NEWSWORDS.test(t)) return newsAnswer(msg, lang);
   if (MARKETWORDS.test(t)) return marketAnswer(lang);
@@ -298,9 +321,10 @@ const TOOLS = [
   { name: 'get_stock', description: 'Live price and rule-based analysis for a Nifty 50 stock. Input: company name or symbol.', input_schema: { type: 'object' as const, properties: { name: { type: 'string' } }, required: ['name'] } },
   { name: 'get_market_today', description: 'Today\'s Indian and global market overview.', input_schema: { type: 'object' as const, properties: {} } },
   { name: 'get_portfolio', description: 'The user\'s portfolio and its health.', input_schema: { type: 'object' as const, properties: {} } },
-  { name: 'get_news', description: 'Latest headlines.', input_schema: { type: 'object' as const, properties: { topic: { type: 'string', enum: ['market', 'economy', 'stocks', 'ipo', 'gold'] } } } },
+  { name: 'get_news', description: 'Latest headlines.', input_schema: { type: 'object' as const, properties: { topic: { type: 'string', enum: ['market', 'economy', 'stocks', 'ipo', 'gold', 'funds'] } } } },
   { name: 'get_top_calls', description: "FinSaathi's current research calls: top long-term picks, short-term setups, rising stars and stocks to reduce or avoid.", input_schema: { type: 'object' as const, properties: {} } },
   { name: 'get_ipos', description: 'Open and upcoming IPOs.', input_schema: { type: 'object' as const, properties: {} } },
+  { name: 'get_ipo_guide', description: 'How IPOs work: how to track, apply, check allotment, what to read in the offer document, SME risk, scams, listing day.', input_schema: { type: 'object' as const, properties: { topic: { type: 'string', description: 'The user question about IPOs, e.g. "how to apply"' } } } },
   { name: 'explain_term', description: 'Plain-language definition of an investing term.', input_schema: { type: 'object' as const, properties: { term: { type: 'string' } }, required: ['term'] } },
 ];
 
@@ -315,12 +339,13 @@ async function llmChat(userId: string, req: ChatRequest): Promise<Draft | null> 
     else if (name === 'get_news') d = await newsAnswer(String(input?.topic ?? 'market'), lang);
     else if (name === 'get_top_calls') d = await callsAnswer(lang);
     else if (name === 'get_ipos') d = await ipoAnswer(lang);
+    else if (name === 'get_ipo_guide') d = ipoGuideAnswer(String(input?.topic ?? req.message), lang);
     else if (name === 'explain_term') { const tm = await findTerm(String(input?.term ?? '')); if (!tm) return 'Term not found in the library.'; d = await termAnswer(tm, lang); }
     else return 'Unknown tool.';
     cites.push(...d.citations); used.push(...d.toolsUsed); outputs.push(d.answer);
     return d.answer;
   };
-  const system = `You are FinSaathi, an investing companion for Indian retail investors, many of them seniors. Answer in ${lang === 'hi' ? 'simple, natural Hindi' : 'plain English'}. Use ONLY the tools; never state a price, number, or fact that a tool did not return. If a tool says data is unavailable, say so. You may report FinSaathi's research calls (BUY, ACCUMULATE, HOLD, REDUCE, SELL) exactly as the tools return them, with their levels and the reminder that it is research, not SEBI-registered advice. Never say guaranteed, sure-shot or risk-free, never promise returns and never predict prices. Explain jargon briefly. Keep answers under 150 words. If no tool fits, say what you can help with.`;
+  const system = `You are FinSaathi, an investing companion for Indian retail investors, many of them seniors. The user already invests through his own demat accounts but has no technical or fundamental knowledge and often buys what a trusted person tells him to; never assume he knows jargon, explain simply and respectfully, and never tell him to ignore that person: help him check first. ${STYLE_INSTRUCTION[req.style ?? (lang === 'hi' ? 'hi' : 'en')]} Write every number with digits 0-9. Plain text only: no markdown, no asterisks, no bold. Use ONLY the tools; never state a price, number, or fact that a tool did not return. If a tool says data is unavailable, say so. You may report FinSaathi's research calls (BUY, ACCUMULATE, HOLD, REDUCE, SELL) exactly as the tools return them, with their levels and the reminder that it is research, not SEBI-registered advice. Never say guaranteed, sure-shot or risk-free, never promise returns and never predict prices. Explain jargon briefly. Keep answers under 150 words. If no tool fits, say what you can help with.`;
   const messages: any[] = [...(req.history ?? []).slice(-6).map((h) => ({ role: h.role, content: h.text })), { role: 'user', content: req.message }];
   for (let i = 0; i < 4; i++) {
     const r = await llmCall({ max_tokens: 700, system, tools: TOOLS, messages });
@@ -332,7 +357,7 @@ async function llmChat(userId: string, req: ChatRequest): Promise<Draft | null> 
       messages.push({ role: 'user', content: results });
       continue;
     }
-    const text = textOf(r).trim();
+    const text = plain(textOf(r));
     if (!text || used.length === 0) return null;
     const allowed = new AllowedNumbers().add(...outputs, req.message);
     if (!validateNarrative(text, allowed).ok) return null;
@@ -341,14 +366,38 @@ async function llmChat(userId: string, req: ChatRequest): Promise<Draft | null> 
   return null;
 }
 
-export async function chat(userId: string, req: ChatRequest): Promise<ChatResponse> {
-  const lang: Lang = req.lang === 'hi' ? 'hi' : 'en';
+/** "Boss told me to buy X": FinSaathi's own numbers for the stock (if we can tell which one), then the five questions to ask first. */
+async function tipAnswer(userId: string, req: ChatRequest): Promise<Draft> {
+  const style: ReplyStyle = req.style ?? 'en'; const lang = req.lang;
+  const st = resolveStock(req.message);
+  // Hinglish readers get the stock facts phrased in Hinglish (the model, under the usual number guard); everyone else gets the exact canned text.
+  const phrased = st && style === 'hinglish' ? await llmChat(userId, { ...req, message: `${st.name} ka price kya hai`, history: [] }).catch(() => null) : null;
+  const base = phrased ?? (st ? await stockAnswer(req.message, st, lang) : null);
+  const answer = (base ? base.answer + '\n\n' : '') + tipChecklist(style, st ? (lang === 'hi' && st.hi[0] ? st.hi[0] : st.name) : undefined);
+  return { answer, citations: base?.citations ?? [], toolsUsed: [...(base?.toolsUsed ?? []), 'tipCheck'], kind: 'stock' };
+}
+
+export async function chat(userId: string, req: ChatRequest, opts: { viaVoice?: boolean } = {}): Promise<ChatResponse> {
   const message = String(req.message ?? '').slice(0, 1000).trim();
-  const r: ChatRequest = { ...req, lang, message };
-  if (!message) return { answer: HELP[lang], citations: [], toolsUsed: [], refused: false, followUps: [...FU[lang].general], generatedBy: 'rules', disclaimer: DISCLAIMER[lang] };
+  // The reply follows how the user wrote or spoke, not the app's language toggle.
+  const style: ReplyStyle = req.style ?? (message ? detectStyle(message) : req.lang === 'hi' ? 'hi' : 'en');
+  const lang: Lang = styleToLang(style);
+  let history = req.history;
+  if (req.conversationId) { try { history = await recentHistory(userId, req.conversationId); } catch { /* fall back to client history */ } }
+  const r: ChatRequest = { ...req, lang, message, style, history };
+  const finish = async (res: ChatResponse): Promise<ChatResponse> => {
+    if (!message) return res;
+    const at = new Date().toISOString();
+    const um: ChatMessage = { id: randomUUID(), role: 'user', text: message, at, style, ...(opts.viaVoice ? { viaVoice: true } : {}) };
+    const am: ChatMessage = { id: randomUUID(), role: 'assistant', text: res.answer, at, style, citations: res.citations, followUps: res.followUps, refused: res.refused, disclaimer: res.disclaimer };
+    try { res.conversationId = await appendTurn(userId, req.conversationId, um, am); } catch { /* saving must never break an answer */ }
+    return res;
+  };
+  if (!message) return { answer: HELP[lang], citations: [], toolsUsed: [], refused: false, followUps: [...FU[lang].general], generatedBy: 'rules', disclaimer: DISCLAIMER[lang], style };
   const refusal = detectRefusal(message);
   let draft: Draft | null = null; let by: 'rules' | 'llm' = 'rules';
-  if (!refusal) { try { draft = await llmChat(userId, r); if (draft) by = 'llm'; } catch { draft = null; } }
+  if (!refusal && isTip(norm(message))) draft = await tipAnswer(userId, r).catch(() => null); // deterministic on purpose: numbers and checklist must not be improvised
+  if (!refusal && !draft) { try { draft = await llmChat(userId, r); if (draft) by = 'llm'; } catch { draft = null; } }
   if (!draft) draft = await rulesChat(userId, r).catch(() => ({ answer: unavailable(lang, lang === 'en' ? 'That information' : 'वह जानकारी'), citations: [], toolsUsed: [], kind: 'general' as const }));
-  return { answer: draft.answer, citations: dedupeCites(draft.citations), toolsUsed: draft.toolsUsed, refused: !!draft.refused, followUps: [...FU[lang][draft.kind]], generatedBy: by, disclaimer: DISCLAIMER[lang] };
+  return finish({ answer: draft.answer, citations: dedupeCites(draft.citations), toolsUsed: draft.toolsUsed, refused: !!draft.refused, followUps: [...FU[lang][draft.kind]], generatedBy: by, disclaimer: DISCLAIMER[lang], style });
 }

@@ -133,7 +133,7 @@ export function PortfolioScreen() {
   const editPreset: Preset | undefined = edit ? { type: edit.type, symbol: edit.symbol ?? undefined, schemeCode: edit.schemeCode ?? undefined, name: edit.name } : undefined;
 
   const holdings = (
-    <Section title={t('pf.holdings')} style={{ marginTop: space.xxl }} aside={<Button compact fullWidth={false} icon={Plus} label={t('pf.add')} onPress={() => setAdding(true)} />}>
+    <Section title={pf.data?.holdings.length ? t('pf.holdings') : undefined} style={{ marginTop: space.xxl }} aside={pf.data?.holdings.length ? <Button compact fullWidth={false} icon={Plus} label={t('pf.add')} onPress={() => setAdding(true)} /> : undefined}>
       <Async q={pf} skeleton={<SkeletonList rows={4} />} isEmpty={(d) => !d.holdings.length}
         empty={(
           <Panel style={{ gap: space.md, borderRadius: 20, padding: space.xl }}>

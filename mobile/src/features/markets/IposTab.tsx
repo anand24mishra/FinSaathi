@@ -1,16 +1,16 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View } from 'react-native';
 import { Accordion } from '@/components/Accordion';
 import { Async, EmptyState } from '@/components/Async';
 import { SkeletonList } from '@/components/Skeleton';
 import { Panel, Section, Hairline } from '@/components/Layout';
 import { Text } from '@/components/Text';
-import { Tag } from '@/components/Chip';
+import { Segmented, Tag } from '@/components/Chip';
 import { Banner } from '@/components/Banner';
 import { RichText } from '@/components/Term';
 import { useApi } from '@/api/useApi';
 import { withLang } from '@/api/client';
-import type { IpoFeed, IpoItem } from '@/api/contract';
+import type { IpoFeed, IpoGuide, IpoItem } from '@/api/contract';
 import { useApp } from '@/state/AppState';
 import { useT, type Key } from '@/i18n';
 import { formatDate, formatNumber } from '@/lib/format';
@@ -41,29 +41,81 @@ function Ipo({ i }: { i: IpoItem }) {
   );
 }
 
-export function IposTab() {
+const GROUPS: IpoItem['status'][] = ['open', 'upcoming', 'closed', 'listed'];
+
+function Upcoming() {
   const { lang } = useApp();
   const t = useT();
   const q = useApi<IpoFeed>(withLang('/ipos', lang), { fresh: 120000 });
   return (
-    <Section title={t('markets.ipos')} style={{ marginTop: space.xl }}>
-      <Async q={q} skeleton={<SkeletonList rows={4} />}>
-        {(f) => (
-          <View style={{ gap: space.lg }}>
-            {!f.available ? <Banner tone="caution" title={t('ipo.unavailable')} body={f.note} /> : <AsOfLine s={f} />}
-            {f.available && !f.items.length ? <EmptyState title={t('ipo.none')} body={f.note} /> : null}
-            {f.items.length ? <Panel pad={false} style={{ paddingHorizontal: space.lg }}>{f.items.map((i) => <Ipo key={i.name} i={i} />)}</Panel> : null}
-            <Banner tone="info" title={t('ipo.gmp')} body={f.gmpNote} />
-            <View>
-              <Text v="h3" style={{ marginBottom: space.sm }}>{t('ipo.checklist')}</Text>
-              <Panel pad={false} style={{ paddingHorizontal: space.lg }}>
-                {f.checklist.map((c, i) => <Accordion key={i} title={c.title}><RichText text={c.body} v="body" /></Accordion>)}
-              </Panel>
-            </View>
-            <Hairline />
+    <Async q={q} skeleton={<SkeletonList rows={4} />}>
+      {(f) => (
+        <View style={{ gap: space.lg }}>
+          {!f.available ? <Banner tone="caution" title={t('ipo.unavailable')} body={f.note} /> : <AsOfLine s={f} />}
+          {f.available && !f.items.length ? <EmptyState title={t('ipo.none')} body={f.note} /> : null}
+          {GROUPS.map((g) => {
+            const rows = f.items.filter((i) => i.status === g);
+            if (!rows.length) return null;
+            return (
+              <View key={g} style={{ gap: space.sm }}>
+                <Text v="h3">{t(`ipo.${g}` as Key)}</Text>
+                <Panel pad={false} style={{ paddingHorizontal: space.lg }}>{rows.map((i) => <Ipo key={i.name} i={i} />)}</Panel>
+              </View>
+            );
+          })}
+          <Text v="small" tone="soft">{t('ipo.timeline')}</Text>
+          <Banner tone="info" title={t('ipo.gmp')} body={f.gmpNote} />
+          <View>
+            <Text v="h3" style={{ marginBottom: space.sm }}>{t('ipo.checklist')}</Text>
+            <Panel pad={false} style={{ paddingHorizontal: space.lg }}>
+              {f.checklist.map((c, i) => <Accordion key={i} title={c.title}><RichText text={c.body} v="body" /></Accordion>)}
+            </Panel>
           </View>
-        )}
-      </Async>
+        </View>
+      )}
+    </Async>
+  );
+}
+
+/** What is new, how to follow it, how to apply, what to read, and what to avoid. Text comes from the server so it can be corrected without an app update. */
+function Guide() {
+  const { lang } = useApp();
+  const t = useT();
+  const q = useApi<IpoGuide>(withLang('/ipos/guide', lang), { fresh: 3600000 });
+  return (
+    <Async q={q} skeleton={<SkeletonList rows={5} />}>
+      {(g) => (
+        <View style={{ gap: space.lg }}>
+          <Banner tone="info" title={t('ipo.guideIntro')} body={g.note} />
+          <Panel pad={false} style={{ paddingHorizontal: space.lg }}>
+            {g.sections.map((sec, idx) => (
+              <Accordion key={sec.id} title={sec.title} open={idx === 0}>
+                {sec.steps.map((st, k) => (
+                  <View key={k} style={{ flexDirection: 'row', gap: space.sm, alignItems: 'flex-start' }}>
+                    <Text v="body" weight="bold" tone="primary" style={{ minWidth: 24 }}>{k + 1}.</Text>
+                    <View style={{ flex: 1 }}><RichText text={st} v="body" /></View>
+                  </View>
+                ))}
+                {sec.tip ? <Banner tone="caution" title={sec.tip} /> : null}
+              </Accordion>
+            ))}
+          </Panel>
+        </View>
+      )}
+    </Async>
+  );
+}
+
+export function IposTab() {
+  const t = useT();
+  const [view, setView] = useState<'upcoming' | 'guide'>('upcoming');
+  return (
+    <Section title={t('markets.ipos')} style={{ marginTop: space.xl }}>
+      <View style={{ gap: space.lg }}>
+        <Segmented<'upcoming' | 'guide'> label={t('ipo.views')} value={view} onChange={setView} options={[{ value: 'upcoming', label: t('ipo.tabUpcoming') }, { value: 'guide', label: t('ipo.tabGuide') }]} />
+        {view === 'upcoming' ? <Upcoming /> : <Guide />}
+        <Hairline />
+      </View>
     </Section>
   );
 }

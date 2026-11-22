@@ -26,6 +26,9 @@ type Ctx = Prefs & {
   refreshUser: () => Promise<void>;
 };
 
+/** Old anonymous accounts from before sign-in became mandatory. */
+export const isGuestUser = (u: User | null | undefined): boolean => !!u?.email?.endsWith('@guest.finsaathi.app');
+
 const AppCtx = createContext<Ctx | null>(null);
 
 export function useApp(): Ctx {

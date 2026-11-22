@@ -6,11 +6,11 @@ import { NIFTY50, type RefStock } from './reference/nifty50';
 import { TtlCache, TTL, iso } from './http';
 import { DataError } from './data';
 
-export const TOPICS = ['market', 'economy', 'stocks', 'ipo', 'gold'] as const;
+export const TOPICS = ['market', 'economy', 'stocks', 'ipo', 'gold', 'funds'] as const;
 export type Topic = (typeof TOPICS)[number];
 const QUERY: Record<Lang, Record<Topic, string>> = {
-  en: { market: 'Sensex Nifty stock market India', economy: 'India economy RBI inflation', stocks: 'India stocks shares results NSE', ipo: 'IPO India NSE BSE', gold: 'gold price India' },
-  hi: { market: 'सेंसेक्स निफ्टी शेयर बाजार', economy: 'भारत अर्थव्यवस्था आरबीआई महंगाई', stocks: 'शेयर कंपनी नतीजे निफ्टी', ipo: 'आईपीओ', gold: 'सोने का भाव' },
+  en: { market: 'Sensex Nifty stock market India', economy: 'India economy RBI inflation', stocks: 'India stocks shares results NSE', ipo: 'IPO India NSE BSE', gold: 'gold price India', funds: 'mutual fund SIP India' },
+  hi: { market: 'सेंसेक्स निफ्टी शेयर बाजार', economy: 'भारत अर्थव्यवस्था आरबीआई महंगाई', stocks: 'शेयर कंपनी नतीजे निफ्टी', ipo: 'आईपीओ', gold: 'सोने का भाव', funds: 'म्यूचुअल फंड एसआईपी' },
 };
 
 const strip = (s: string) => s.replace(/़/g, '').toLowerCase();
@@ -51,8 +51,9 @@ export function toNewsItem(r: RawNews, lang: Lang): NewsItem {
     explanation = lang === 'hi' ? `बाज़ार या अर्थव्यवस्था की सामान्य ख़बर; शीर्षक के शब्दों से ${sw} लगती है।` : `General market or economy news; its wording reads ${sw}.`;
   }
   return {
-    id: createHash('sha1').update(r.url).digest('hex').slice(0, 12), title: r.title, source: r.publisher, url: r.url, publishedAt: r.publishedAt, lang,
+    id: r.id ?? createHash('sha1').update(r.url).digest('hex').slice(0, 12), title: r.title, source: r.publisher, url: r.url, publishedAt: r.publishedAt, lang,
     sentiment, sentimentMethod: sentimentMethod(lang), explanation, affectedSymbols: syms.map((s) => s.symbol), impact,
+    ...(r.summary ? { summary: r.summary } : {}), ...(r.body ? { body: r.body } : {}),
   };
 }
 

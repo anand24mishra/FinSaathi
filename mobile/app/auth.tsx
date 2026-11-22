@@ -7,7 +7,7 @@ import { Field } from '@/components/Field';
 import { Banner } from '@/components/Banner';
 import { api, ApiError } from '@/api/client';
 import type { AuthResponse } from '@/api/contract';
-import { useApp } from '@/state/AppState';
+import { isGuestUser, useApp } from '@/state/AppState';
 import { useT } from '@/i18n';
 import { ChevronLeft } from 'lucide-react-native';
 import { GoogleCancelled, getGoogleIdToken, googleAvailable } from '@/lib/googleSignIn';
@@ -18,14 +18,15 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export default function Auth() {
   const { mode: m } = useLocalSearchParams<{ mode?: string }>();
   const [mode, setMode] = useState<'register' | 'login'>(m === 'login' ? 'login' : 'register');
-  const { lang, draftName, setDraftName, signIn, token } = useApp();
+  const { lang, draftName, setDraftName, signIn, token, user, refreshUser } = useApp();
+  const guest = !!token && isGuestUser(user);
   const t = useT();
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<{ name?: string; email?: string; password?: string; form?: string }>({});
-  if (token) return <Redirect href="/" />;
+  if (token && !guest) return <Redirect href="/" />;
 
   const googleLogin = async () => {
     setErrors({}); setBusy(true);
@@ -50,6 +51,13 @@ export default function Auth() {
     if (Object.keys(e).length) return;
     setBusy(true);
     try {
+      if (mode === 'register' && guest) {
+        // keep the old guest's portfolio and saved chats: turn this account into a real one
+        await api.post('/me/claim', { name: draftName.trim(), email: email.trim().toLowerCase(), password }, { timeoutMs: 20000 });
+        await refreshUser();
+        router.replace('/');
+        return;
+      }
       const body = mode === 'register' ? { name: draftName.trim(), email: email.trim().toLowerCase(), password, language: lang } : { email: email.trim().toLowerCase(), password };
       const r = await api.post<AuthResponse>(mode === 'register' ? '/auth/register' : '/auth/login', body, { timeoutMs: 20000 });
       signIn(r);

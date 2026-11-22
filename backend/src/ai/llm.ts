@@ -122,3 +122,41 @@ export async function llmCall(params: LlmParams): Promise<Anthropic.Message | nu
   return null;
 }
 export const textOf = (m: Anthropic.Message): string => m.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('\n');
+
+// ---------- speech to text (Gemini audio understanding) ----------
+const TRANSCRIBE_PROMPT = `Transcribe this short voice question from an Indian retail investor. Write exactly what was said and do not answer it.
+- If it is mostly Hindi, write the transcript in Devanagari and set "style" to "hi".
+- If it is Hindi mixed with many English words, write it in Roman letters (Hinglish) and set "style" to "hinglish".
+- If it is English, set "style" to "en".
+- If you cannot make out any speech, return an empty transcript.
+Return JSON only: {"transcript": string, "style": "hi" | "hinglish" | "en"}`;
+
+export interface Transcription { transcript: string; style: 'hi' | 'hinglish' | 'en' }
+
+/** Returns null when no Gemini key is configured or every key/model failed. */
+export async function geminiTranscribe(audio: Buffer, mimeType: string): Promise<Transcription | null> {
+  if (!hasGemini() || used >= tokenCap()) return null;
+  const body = {
+    contents: [{ role: 'user', parts: [{ inline_data: { mime_type: mimeType, data: audio.toString('base64') } }, { text: TRANSCRIBE_PROMPT }] }],
+    generationConfig: { temperature: 0, maxOutputTokens: 1024, responseMimeType: 'application/json' },
+  };
+  for (const model of geminiModels()) {
+    for (const key of geminiKeys()) {
+      const id = `${key.slice(-6)}|${model}`;
+      if ((cooldown.get(id) ?? 0) > Date.now()) continue;
+      try {
+        const j = await geminiOnce(key, model, body);
+        used += (j?.usageMetadata?.promptTokenCount ?? 0) + (j?.usageMetadata?.candidatesTokenCount ?? 0);
+        const text: string = (j?.candidates?.[0]?.content?.parts ?? []).filter((p: any) => typeof p.text === 'string' && !p.thought).map((p: any) => p.text).join('');
+        const parsed = JSON.parse(text.replace(/^```(?:json)?|```$/g, '').trim());
+        const transcript = typeof parsed?.transcript === 'string' ? parsed.transcript.trim().slice(0, 1000) : '';
+        const style = parsed?.style === 'hi' || parsed?.style === 'hinglish' ? parsed.style : 'en';
+        return { transcript, style };
+      } catch (e: any) {
+        const st = e?.status;
+        cooldown.set(id, Date.now() + (st === 429 ? COOL_MS.quota : st === 404 || st === 400 || st === 403 ? COOL_MS.gone : COOL_MS.busy));
+      }
+    }
+  }
+  return null;
+}

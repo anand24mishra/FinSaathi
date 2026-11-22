@@ -27,6 +27,16 @@ const text = (v: any): string => {
   return String(v);
 };
 
+const ENT: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+/** RSS <description> -> plain text; dropped when it only repeats the headline. */
+export function cleanSummary(raw: string, title: string): string | undefined {
+  const t = raw.replace(/<[^>]*>/g, ' ').replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n)).replace(/&([a-z]+);/gi, (m, e) => ENT[e.toLowerCase()] ?? m).replace(/\s+/g, ' ').trim();
+  if (t.length < 25) return undefined;
+  const k = (x: string) => x.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+  if (k(t).startsWith(k(title).slice(0, 40)) && k(t).length < k(title).length + 20) return undefined;
+  return t.length > 400 ? t.slice(0, 397).trimEnd() + '…' : t;
+}
+
 /** Parse a plain RSS 2.0 feed (CDATA ok). Titles are kept intact (no " - Publisher" stripping). */
 export function parseFeed(xml: string, publisher: string, lang: Lang, skipPath?: RegExp): RawNews[] {
   const doc = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_', textNodeName: '#text' }).parse(xml);
@@ -39,7 +49,8 @@ export function parseFeed(xml: string, publisher: string, lang: Lang, skipPath?:
     const d = new Date(text(it.pubDate).trim());
     if (!title || !/^https?:\/\//.test(url) || isNaN(d.getTime())) continue;
     if (skipPath?.test(url)) continue;
-    out.push({ title, url: url.replace(/#publisher=newsstand$/, ''), publishedAt: d.toISOString(), publisher, lang });
+    const summary = cleanSummary(text(it.description), title);
+    out.push({ title, url: url.replace(/#publisher=newsstand$/, ''), publishedAt: d.toISOString(), publisher, lang, ...(summary ? { summary } : {}) });
   }
   return out;
 }

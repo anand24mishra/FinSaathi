@@ -1,7 +1,8 @@
 import '@/styles';
 import { GluestackUIProvider } from '../components/ui/gluestack-ui-provider';
 import React, { useEffect } from 'react';
-import { Platform, useColorScheme, View } from 'react-native';
+import { Platform, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { Stack } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts, Hind_400Regular, Hind_500Medium, Hind_600SemiBold, Hind_700Bold } from '@expo-google-fonts/hind';
@@ -9,7 +10,7 @@ import { AppProvider, useApp } from '@/state/AppState';
 import { ThemeProvider, useTheme } from '@/theme/ThemeProvider';
 import { ConnectivityProvider } from '@/components/Connectivity';
 import { TermProvider } from '@/components/Term';
-import { light, dark } from '@/theme/tokens';
+import { light } from '@/theme/tokens';
 
 function WebChrome() {
   const { colors } = useTheme();
@@ -34,9 +35,10 @@ function WebChrome() {
 }
 
 function Inner() {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   return (
-    <GluestackUIProvider mode={isDark ? 'dark' : 'light'}>
+    <GluestackUIProvider mode="light">
+      <StatusBar style="dark" />
       <WebChrome />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg }, animation: 'fade' }} />
     </GluestackUIProvider>
@@ -45,8 +47,7 @@ function Inner() {
 
 export default function Root() {
   const [loaded] = useFonts({ Hind_400Regular, Hind_500Medium, Hind_600SemiBold, Hind_700Bold });
-  const sys = useColorScheme();
-  if (!loaded) return <View style={{ flex: 1, backgroundColor: (sys === 'dark' ? dark : light).bg }} />;
+  if (!loaded) return <View style={{ flex: 1, backgroundColor: light.bg }} />;
   return (
     <SafeAreaProvider>
       <AppProvider>

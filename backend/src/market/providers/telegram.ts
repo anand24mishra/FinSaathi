@@ -137,6 +137,9 @@ export function parseChannelHtml(html: string, handle: string): ParsedChannel {
 }
 const rawOf = new WeakMap<SocialPost, { text: string; links: string[] }>();
 
+/** Full text of a parsed post (SocialPost.title is clipped). Server-side only. */
+export const telegramText = (p: SocialPost): string => rawOf.get(p)?.text ?? p.title;
+
 // ---------- fetching ----------
 const idOf = (h: string) => `telegram-${h.toLowerCase()}`;
 const base = (h: string) => ({ id: idOf(h), name: `Telegram @${h}`, origin: 'telegram' as const });
